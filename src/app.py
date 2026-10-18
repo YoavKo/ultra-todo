@@ -418,7 +418,7 @@ def cmd_ls(argv: list[str]) -> None:
         when = (datetime.fromisoformat(r["last_opened"]).astimezone().strftime("%Y-%m-%d %H:%M")
                 if r["last_opened"] else "")
         note = "" if r["exists"] else "  (missing)"
-        print(f"{r['name']:<{width}}  {r['path']}  {when}{note}".rstrip())
+        print(f"{when or '-':<16}  {r['name']:<{width}}  {r['path']}{note}")
 
 
 def main(argv=None) -> None:

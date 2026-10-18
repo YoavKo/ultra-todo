@@ -77,7 +77,7 @@ complete -F _utd utd
 utd                          # current directory
 utd --lang he                # flags only: still the current directory
 utd ~/work/some-repo --lang he --port 9000
-utd ls                       # known repos: name, path, last opened
+utd ls                       # known repos: last opened, name, path
 utd open some-repo           # open a known repo by name (Tab completes names)
 ```
 
