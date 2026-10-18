@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ultra-todo 0.1.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-18 19:38+0300\n"
+"POT-Creation-Date: 2026-10-18 19:39+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: he\n"
@@ -17,6 +17,15 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.18.0\n"
+
+msgid "High"
+msgstr "גבוהה"
+
+msgid "Medium"
+msgstr "בינונית"
+
+msgid "Low"
+msgstr "נמוכה"
 
 msgid "To do"
 msgstr "לביצוע"
@@ -122,6 +131,9 @@ msgstr "בוצע commit."
 msgid "Nothing to save."
 msgstr "אין מה לשמור."
 
+msgid "Priority"
+msgstr "עדיפות"
+
 msgid "Search tasks and comments…"
 msgstr "חיפוש במשימות ובתגובות…"
 
@@ -130,6 +142,9 @@ msgstr "אחראי/ת"
 
 msgid "All assignees"
 msgstr "כל האחראים"
+
+msgid "All priorities"
+msgstr "כל העדיפויות"
 
 msgid "Match any tag"
 msgstr "התאמה לאחת התגיות"

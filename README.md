@@ -14,6 +14,8 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 ## Features
 
 - Kanban board and list view
+- **Priority** – high / medium / low (default medium): coloured badge on cards, priority filter, high-priority tasks listed first
+- **Dependencies** – each task page shows what blocks it and what it blocks, with one-click × to remove a link and a picker to add one (cycles are rejected)
 - **Tags** on tasks, with filter chips (AND / OR, shareable via URL)
 - **Comments** per task: newest first, author and time stamped by the server, editable, with image/file attachments stored next to the task
 - **Update** button: `git pull --ff-only`, then the index is refreshed from the diff (rebase offered if the branch diverged; aborted cleanly on conflict)
@@ -59,6 +61,7 @@ Task:
   id: "TKT-101",
   title: "תיקון באג בהתחברות",
   status: "in_progress",        // todo | in_progress | done | blocked
+  priority: "high",             // high | medium | low (optional, default medium)
   assignee: "yoav",
   description: "…",
   tags: ["backend", "דחוף"],

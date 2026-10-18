@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import filter_bar, tag_chip %}
+{% from "_macros.html" import filter_bar, tag_chip, priority_badge %}
 {% block title %}{{ _('Board') }}{% endblock %}
 {% block content %}
 {{ filter_bar(f, all_tags, assignees, 'index', total) }}
@@ -10,10 +10,11 @@
       <a class="add" href="{{ url_for('new_task', status=status) }}" title="{{ _('New task') }}">+</a></h2>
     <div class="cards" data-dropzone>
       {% for t in tasks %}
-      <article class="card" draggable="true" data-id="{{ t.id }}">
+      <article class="card prio-edge-{{ t.priority }}" draggable="true" data-id="{{ t.id }}">
         <a class="card-title" href="{{ url_for('task_view', task_id=t.id) }}"
            {% if t.lang %}lang="{{ t.lang }}" dir="{{ 'rtl' if t.lang == 'he' else 'ltr' }}"{% else %}dir="auto"{% endif %}>{{ t.title }}</a>
         <div class="meta">
+          {{ priority_badge(t.priority) }}
           <bdi class="id" dir="ltr">{{ t.id }}</bdi>
           {% if t.assignee %}<span dir="auto">👤 {{ t.assignee }}</span>{% endif %}
           {% if t.comment_count %}<span>💬 {{ t.comment_count }}</span>{% endif %}

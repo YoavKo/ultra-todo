@@ -16,7 +16,7 @@ from flask import (Flask, abort, flash, jsonify, redirect, render_template, requ
 from flask_babel import format_datetime, get_locale, gettext as _, ngettext
 from markupsafe import Markup, escape
 
-from engine import (STATUSES, CycleError, Engine, EngineError, GitError, NotFound,
+from engine import (PRIORITIES, STATUSES, CycleError, Engine, EngineError, GitError, NotFound,
                     SyncError, ValidationError)
 from i18n import COOKIE, SUPPORTED, init_babel, text_dir
 
@@ -24,6 +24,10 @@ log = logging.getLogger("ultra-todo")
 
 INLINE_IMAGES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 CSRF_COOKIE = "csrf_token"
+
+
+def priority_label(priority: str) -> str:
+    return {"high": _("High"), "medium": _("Medium"), "low": _("Low")}.get(priority, priority)
 
 
 def status_label(status: str) -> str:
@@ -68,6 +72,9 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
                       SECRET_KEY=secrets.token_hex(32))
     init_babel(app)
     app.jinja_env.filters["linkify"] = linkify
+    # globals (unlike context vars) are visible inside imported macros
+    app.jinja_env.globals.update(priority_label=priority_label, status_label=status_label,
+                                 PRIORITIES=PRIORITIES, STATUSES=STATUSES)
 
     @app.template_filter("dt")
     def _dt(value):
@@ -83,7 +90,8 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
     def _ctx():
         loc = str(get_locale())
         return {"locale": loc, "dir": text_dir(loc), "status_label": status_label,
-                "STATUSES": STATUSES, "project_name": engine.root.name,
+                "STATUSES": STATUSES, "PRIORITIES": PRIORITIES,
+                "priority_label": priority_label, "project_name": engine.root.name,
                 "project_path": engine.project, "csrf_token": request.cookies.get(CSRF_COOKIE)
                 or getattr(request, "_new_csrf", ""), "SUPPORTED": SUPPORTED,
                 "ngettext": ngettext}
@@ -150,10 +158,14 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
             "assignee": request.args.get("assignee", "").strip(),
             "tags": [t for t in request.args.getlist("tag") if t.strip()],
             "match": "any" if request.args.get("match") == "any" else "all",
+            "priority": request.args.get("priority") if request.args.get("priority")
+            in PRIORITIES else "",
         }
 
     def form_task(form) -> dict:
         data = {k: form.get(k, "") for k in ("title", "status", "assignee", "description")}
+        if form.get("priority"):
+            data["priority"] = form["priority"]
         data["tags"] = form.getlist("tags") + form.get("tags_text", "").split(",")
         if "blocked_by_field" in form:  # only the new-task form edits blockers inline
             data["blocked_by"] = [b.strip() for b in form.getlist("blocked_by")
@@ -183,7 +195,7 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
     def index():
         engine.refresh()
         f = filters()
-        tasks = engine.list_tasks(q=f["q"], assignee=f["assignee"], tags=f["tags"],
+        tasks = engine.list_tasks(q=f["q"], assignee=f["assignee"], tags=f["tags"], priority=f["priority"] or None,
                                   match=f["match"])
         columns = {s: [t for t in tasks if t["status"] == s] for s in STATUSES}
         return render_template("board.html", columns=columns, f=f, view="board",
@@ -194,7 +206,7 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
     def list_view():
         engine.refresh()
         f = filters()
-        tasks = engine.list_tasks(q=f["q"], assignee=f["assignee"], tags=f["tags"],
+        tasks = engine.list_tasks(q=f["q"], assignee=f["assignee"], tags=f["tags"], priority=f["priority"] or None,
                                   match=f["match"])
         return render_template("list.html", tasks=tasks, f=f, view="list",
                                all_tags=engine.all_tags(), assignees=engine.assignees(),
@@ -204,6 +216,7 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
     def new_task():
         engine.refresh()
         task = {"id": "", "title": "", "status": request.args.get("status", "todo"),
+                "priority": "medium",
                 "assignee": "", "description": "", "tags": [], "blocked_by": []}
         return render_template("task.html", task=task, is_new=True, comments=[],
                                candidates=engine.list_tasks(),

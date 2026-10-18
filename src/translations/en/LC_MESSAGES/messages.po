@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ultra-todo 0.1.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-18 19:38+0300\n"
+"POT-Creation-Date: 2026-10-18 19:39+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -17,6 +17,15 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.18.0\n"
+
+msgid "High"
+msgstr ""
+
+msgid "Medium"
+msgstr ""
+
+msgid "Low"
+msgstr ""
 
 msgid "To do"
 msgstr ""
@@ -118,6 +127,9 @@ msgstr ""
 msgid "Nothing to save."
 msgstr ""
 
+msgid "Priority"
+msgstr ""
+
 msgid "Search tasks and comments…"
 msgstr ""
 
@@ -125,6 +137,9 @@ msgid "Assignee"
 msgstr ""
 
 msgid "All assignees"
+msgstr ""
+
+msgid "All priorities"
 msgstr ""
 
 msgid "Match any tag"

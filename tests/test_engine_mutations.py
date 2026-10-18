@@ -119,3 +119,14 @@ def test_comment_deleted_via_git_removes_row(eng, repo):
     commit_all(repo)
     eng.refresh()
     assert eng.get_comments("TKT-101") == []
+
+
+def test_priority_default_validation_and_order(eng, repo):
+    assert eng.get_task("TKT-101")["priority"] == "medium"  # file has no priority
+    eng.save_task({"id": "L", "title": "l", "priority": "low"}, create=True)
+    eng.save_task({"id": "H", "title": "h", "priority": "high"}, create=True)
+    assert [t["id"] for t in eng.list_tasks()] == ["H", "TKT-101", "L"]
+    assert [t["id"] for t in eng.list_tasks(priority="high")] == ["H"]
+    assert json.loads((repo / ".todo/tasks/H.json5").read_text())["priority"] == "high"
+    with pytest.raises(ValidationError):
+        eng.save_task({"id": "H", "priority": "urgent"})

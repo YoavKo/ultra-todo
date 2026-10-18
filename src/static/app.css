@@ -140,3 +140,11 @@ dialog::backdrop { background: rgb(0 0 0 / .35); }
 .dep-add { display: flex; gap: 6px; }
 .dep-add select { flex: 1; min-width: 0; }
 @media (max-width: 600px) { .deps { grid-template-columns: 1fr; } }
+
+.prio { font-size: .75rem; white-space: nowrap; font-weight: 600; }
+.prio-high { color: var(--danger); }
+.prio-medium { color: var(--warn); }
+.prio-low { color: var(--muted); font-weight: 400; }
+.card.prio-edge-high { border-inline-start: 3px solid var(--danger); }
+.card.prio-edge-medium { border-inline-start: 3px solid var(--warn); }
+.card.prio-edge-low { border-inline-start: 3px solid var(--line); }

@@ -22,8 +22,10 @@ import platformdirs
 
 log = logging.getLogger("ultra-todo")
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 STATUSES = ("todo", "in_progress", "done", "blocked")
+PRIORITIES = ("high", "medium", "low")  # in sort order
+DEFAULT_PRIORITY = "medium"
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 MAX_TAG_LEN = 40
 TODO_DIR = ".todo"
@@ -165,6 +167,9 @@ def clean_task(raw: dict[str, Any], task_id: str | None = None) -> dict[str, Any
     status = raw.get("status") or "todo"
     if status not in STATUSES:
         raise ValidationError(f"invalid status: {status!r}")
+    priority = raw.get("priority") or DEFAULT_PRIORITY
+    if priority not in PRIORITIES:
+        raise ValidationError(f"invalid priority: {priority!r}")
     bb = raw.get("blocked_by") or []
     if isinstance(bb, str):
         bb = [bb]
@@ -175,6 +180,7 @@ def clean_task(raw: dict[str, Any], task_id: str | None = None) -> dict[str, Any
         "id": tid,
         "title": unicodedata.normalize("NFC", str(raw.get("title") or "").strip()),
         "status": status,
+        "priority": priority,
         "assignee": str(raw.get("assignee") or "").strip(),
         "description": str(raw.get("description") or ""),
         "tags": normalize_tags(raw.get("tags")),
@@ -213,7 +219,7 @@ CREATE TABLE IF NOT EXISTS projects(
 );
 CREATE TABLE IF NOT EXISTS tasks(
   project_path TEXT, id TEXT, title TEXT, status TEXT, assignee TEXT,
-  description TEXT, lang TEXT, search TEXT,
+  description TEXT, lang TEXT, search TEXT, priority TEXT, priority_rank INTEGER,
   PRIMARY KEY(project_path, id)
 );
 CREATE TABLE IF NOT EXISTS dependencies(
@@ -457,9 +463,10 @@ class Engine:
         search = fold(" ".join([tid, task["title"], task["description"], task["assignee"]]))
         db.execute(
             "INSERT OR REPLACE INTO tasks(project_path,id,title,status,assignee,"
-            "description,lang,search) VALUES(?,?,?,?,?,?,?,?)",
+            "description,lang,search,priority,priority_rank) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (p, tid, task["title"], task["status"], task["assignee"],
-             task["description"], task.get("lang"), search))
+             task["description"], task.get("lang"), search, task["priority"],
+             PRIORITIES.index(task["priority"])))
         db.execute("DELETE FROM dependencies WHERE project_path=? AND task_id=?", (p, tid))
         db.executemany("INSERT OR IGNORE INTO dependencies VALUES(?,?,?)",
                        [(p, tid, b) for b in task["blocked_by"]])
@@ -506,6 +513,7 @@ class Engine:
             "SELECT task_id, COUNT(*) n FROM comments WHERE project_path=? GROUP BY task_id", (p,))}
         for t in tasks:
             t.pop("search", None)
+            t.pop("priority_rank", None)
             t["tags"] = tags.get(t["id"], [])
             t["blocked_by"] = deps.get(t["id"], [])
             t["blocks"] = sorted(blocks.get(t["id"], []))
@@ -514,11 +522,14 @@ class Engine:
 
     def list_tasks(self, status: str | None = None, assignee: str | None = None,
                    q: str | None = None, tags: Iterable[str] = (),
+                   priority: str | None = None,
                    match: str = "all") -> list[dict[str, Any]]:
         sql = ["SELECT * FROM tasks WHERE project_path=?"]
         args: list[Any] = [self.project]
         if status:
             sql.append("AND status=?"); args.append(status)
+        if priority:
+            sql.append("AND priority=?"); args.append(priority)
         if assignee:
             sql.append("AND assignee=?"); args.append(assignee)
         if q:
@@ -533,7 +544,7 @@ class Engine:
             sql.append(f"AND id IN (SELECT task_id FROM task_tags WHERE project_path=? "
                        f"AND tag_key IN ({marks}) GROUP BY task_id {having})")
             args += [self.project, *keys]
-        sql.append("ORDER BY id")
+        sql.append("ORDER BY priority_rank, id")
         return self._task_rows(self.db.execute(" ".join(sql), args).fetchall())
 
     def get_task(self, task_id: str) -> dict[str, Any]:

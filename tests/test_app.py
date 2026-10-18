@@ -143,3 +143,18 @@ def test_remove_dangling_blocker(client, repo):
 def test_dependencies_in_hebrew(client):
     html = client.get("/task/TKT-102?lang=he").get_data(as_text=True)
     assert "חסום ע״י" in html and "ממתינה למשימה פתוחה אחת" in html and "הסרת הקישור" in html
+
+
+def test_priority_form_filter_and_hebrew(client):
+    r = post(client, "/task/TKT-102", data={"title": "Second", "status": "todo", "priority": "high"})
+    assert r.status_code == 302 and client.eng.get_task("TKT-102")["priority"] == "high"
+    html = client.get("/list?priority=high").get_data(as_text=True)
+    assert "Second" in html and "שלום עולם" not in html and "prio-high" in html
+    board = client.get("/?lang=he").get_data(as_text=True)
+    assert "גבוהה" in board and "עדיפות" in board
+    # board column lists high priority first
+    post(client, "/task", data={"id": "Z", "title": "zz", "status": "todo", "priority": "low"})
+    post(client, "/task", data={"id": "A0", "title": "aa", "status": "todo", "priority": "high"})
+    todo = re.search(r'data-status="todo".*?</section>', client.get("/").get_data(as_text=True), re.S).group(0)
+    order = re.findall(r'data-id="([^"]+)"', todo)
+    assert order.index("A0") < order.index("Z")

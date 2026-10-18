@@ -74,6 +74,11 @@
           {% for s in STATUSES %}<option value="{{ s }}" {% if s == task.status %}selected{% endif %}>{{ status_label(s) }}</option>{% endfor %}
         </select>
       </label>
+      <label>{{ _('Priority') }}
+        <select name="priority">
+          {% for p in PRIORITIES %}<option value="{{ p }}" {% if p == (task.priority or 'medium') %}selected{% endif %}>{{ priority_label(p) }}</option>{% endfor %}
+        </select>
+      </label>
       <label>{{ _('Assignee') }}
         <input name="assignee" value="{{ task.assignee }}" dir="auto">
       </label>
