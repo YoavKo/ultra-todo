@@ -14,7 +14,7 @@ from pathlib import Path
 
 import platformdirs
 
-from engine import EngineError, default_db_path, fold, forget_project
+from engine import Engine, EngineError, default_db_path, fold, forget_project
 
 
 def default_registry_path() -> Path:
@@ -67,6 +67,27 @@ def known(registry: Path | None = None, db_path: Path | None = None) -> list[dic
     repos.sort(key=lambda r: fold(r["name"]))
     repos.sort(key=lambda r: r["last_opened"] or "", reverse=True)
     return repos
+
+
+def task_counts(repo: dict, db_path: Path | None = None) -> tuple[int, int] | None:
+    """(open, done) task counts. Existing repos are refreshed first (cheap when nothing
+    changed); otherwise the cached index is used. None if the repo was never indexed."""
+    db = db_path or default_db_path()
+    if repo["exists"]:
+        try:
+            Engine(repo["path"], db_path=db).refresh()
+        except EngineError:
+            pass
+    if not db.exists():
+        return None
+    with sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5) as conn:
+        if not conn.execute("SELECT 1 FROM projects WHERE project_path=?",
+                            (repo["path"],)).fetchone():
+            return None
+        rows = dict(conn.execute(
+            "SELECT status = 'done', COUNT(*) FROM tasks WHERE project_path=? GROUP BY 1",
+            (repo["path"],)).fetchall())
+    return rows.get(0, 0), rows.get(1, 0)
 
 
 def _pick(name: str, listed: list[dict], missing_ok: bool) -> dict:

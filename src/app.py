@@ -414,13 +414,18 @@ def cmd_ls(argv: list[str]) -> None:
     if not known:
         print("no repos yet; run: ultra-todo --target PATH")
         return
-    width = max(len(r["name"]) for r in known)
-    num = len(str(len(known)))
+    rows = []
     for i, r in enumerate(known, 1):
         when = (datetime.fromisoformat(r["last_opened"]).astimezone().strftime("%Y-%m-%d %H:%M")
-                if r["last_opened"] else "")
+                if r["last_opened"] else "-")
+        counts = repos.task_counts(r)
+        tasks = f"[{counts[0]} open, {counts[1]} done]" if counts else "[-]"
         note = "" if r["exists"] else "  (missing)"
-        print(f"{i:>{num}}  {when or '-':<16}  {r['name']:<{width}}  {r['path']}{note}")
+        rows.append((str(i), when, r["name"], tasks, r["path"] + note))
+    widths = [max(len(row[c]) for row in rows) for c in range(4)]
+    for row in rows:
+        print(f"{row[0]:>{widths[0]}}  {row[1]:<{widths[1]}}  {row[2]:<{widths[2]}}  "
+              f"{row[3]:<{widths[3]}}  {row[4]}")
 
 
 def cmd_forget(argv: list[str]) -> None:

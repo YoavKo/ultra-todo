@@ -62,3 +62,17 @@ def test_forget_by_numbers_and_names(tmp_path, repo, make_engine):
         repos.forget(["a", "9"], reg, e.db_path)
     assert [r["path"] for r in repos.known(reg, e.db_path)] == [str(a)]  # all or nothing
     assert repo.exists()
+
+
+def test_task_counts(tmp_path, repo):
+    from conftest import commit_all, write_task
+    db = tmp_path / "idx.sqlite3"
+    write_task(repo, "A", status="todo")
+    write_task(repo, "B", status="in_progress")
+    write_task(repo, "C", status="done")
+    commit_all(repo)
+    r = {"path": str(repo), "exists": True}
+    assert repos.task_counts(r, db) == (2, 1)
+    write_task(repo, "D", status="blocked")  # uncommitted edits are picked up too
+    assert repos.task_counts(r, db) == (3, 1)
+    assert repos.task_counts({"path": str(tmp_path / "gone"), "exists": False}, db) is None
