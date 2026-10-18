@@ -39,15 +39,19 @@ Add this to `~/.bashrc` (adjust the checkout path) to run `utd [path] [flags]` f
 the path defaults to the current directory and extra flags are passed through:
 
 ```bash
-# ultra-todo: utd [path] [extra flags]  (path defaults to .)
+# ultra-todo: utd [path] [flags] | utd ls | utd open NAME [flags]  (path defaults to .)
 utd() {
+    local proj="$HOME/path/to/ultra-todo"
+    case "$1" in
+        ls|open) uv run --project "$proj" ultra-todo "$@"; return ;;
+    esac
     local target=.
     if [ $# -gt 0 ] && [[ "$1" != -* ]]; then target="$1"; shift; fi
     target="$(realpath -- "$target")" || return 1
-    uv run --project "$HOME/path/to/ultra-todo" ultra-todo --target "$target" "$@"
+    uv run --project "$proj" ultra-todo --target "$target" "$@"
 }
 
-# tab completion for utd: a directory first, then ultra-todo flags
+# tab completion for utd: ls/open or a directory first, repo names after open, then flags
 _utd() {
     local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
     case "$prev" in
@@ -55,10 +59,15 @@ _utd() {
         --db) compopt -o filenames; COMPREPLY=($(compgen -f -- "$cur")); return ;;
         --host|--port|--author|--max-attachment-mb|--threads) return ;;
     esac
-    if [[ "$cur" == -* ]]; then
+    [ "${COMP_WORDS[1]}" = ls ] && return
+    if [ "${COMP_WORDS[1]}" = open ] && [ "$COMP_CWORD" -eq 2 ]; then
+        local IFS=$'\n'
+        COMPREPLY=($(compgen -W "$(utd ls --names 2>/dev/null)" -- "$cur"))
+    elif [[ "$cur" == -* ]]; then
         COMPREPLY=($(compgen -W "--lang --host --port --auto-commit --author --max-attachment-mb --db --threads --debug -h --help" -- "$cur"))
     elif [ "$COMP_CWORD" -eq 1 ]; then
-        compopt -o filenames; COMPREPLY=($(compgen -d -- "$cur"))
+        compopt -o filenames
+        COMPREPLY=($(compgen -W "ls open" -- "$cur") $(compgen -d -- "$cur"))
     fi
 }
 complete -F _utd utd
@@ -68,7 +77,14 @@ complete -F _utd utd
 utd                          # current directory
 utd --lang he                # flags only: still the current directory
 utd ~/work/some-repo --lang he --port 9000
+utd ls                       # known repos: name, path, last opened
+utd open some-repo           # open a known repo by name (Tab completes names)
 ```
+
+Every repo you serve is remembered in `repos.json` in the user data dir
+(`~/.local/share/ultra-todo/` on Linux); `ultra-todo ls` and `ultra-todo open NAME` work without
+the shortcut too. Names match case-insensitively; if two repos share a name, use the path.
+`ls` and `open` are commands, so to serve a directory with one of those names write `utd ./ls`.
 
 ### CLI flags
 

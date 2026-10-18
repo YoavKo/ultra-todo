@@ -9,6 +9,7 @@ import logging
 import re
 import secrets
 import socket
+import sys
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -20,6 +21,7 @@ from markupsafe import Markup, escape
 from engine import (PRIORITIES, STATUSES, CycleError, Engine, EngineError, GitError, NotFound,
                     SyncError, ValidationError)
 from i18n import COOKIE, SUPPORTED, init_babel, text_dir
+import repos
 
 log = logging.getLogger("ultra-todo")
 
@@ -400,8 +402,39 @@ def bind_socket(host: str, port: int | None, tries: int = 50) -> socket.socket:
     raise SystemExit(f"error: no free port in {DEFAULT_PORT}-{DEFAULT_PORT + tries - 1}")
 
 
+def cmd_ls(argv: list[str]) -> None:
+    ap = argparse.ArgumentParser(prog="ultra-todo ls", description="List known repositories")
+    ap.add_argument("--names", action="store_true", help="names only (for shell completion)")
+    args = ap.parse_args(argv)
+    known = repos.known()
+    if args.names:
+        print("\n".join(sorted({r["name"] for r in known if r["exists"]})))
+        return
+    if not known:
+        print("no repos yet; run: ultra-todo --target PATH")
+        return
+    width = max(len(r["name"]) for r in known)
+    for r in known:
+        when = (datetime.fromisoformat(r["last_opened"]).astimezone().strftime("%Y-%m-%d %H:%M")
+                if r["last_opened"] else "")
+        note = "" if r["exists"] else "  (missing)"
+        print(f"{r['name']:<{width}}  {r['path']}  {when}{note}".rstrip())
+
+
 def main(argv=None) -> None:
-    ap = argparse.ArgumentParser(prog="ultra-todo", description="Local GitOps task manager")
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["ls"]:
+        return cmd_ls(argv[1:])
+    if argv[:1] == ["open"]:
+        if len(argv) < 2 or argv[1].startswith("-"):
+            raise SystemExit("usage: ultra-todo open NAME [options]  (see: ultra-todo ls)")
+        try:
+            argv = ["--target", repos.resolve(argv[1])] + argv[2:]
+        except EngineError as e:
+            raise SystemExit(f"error: {e}")
+    ap = argparse.ArgumentParser(
+        prog="ultra-todo", description="Local GitOps task manager",
+        epilog="also: 'ultra-todo ls' lists known repos, 'ultra-todo open NAME' opens one by name")
     ap.add_argument("--target", required=True, help="path of the git repository to manage")
     ap.add_argument("--lang", choices=SUPPORTED, help="default UI language")
     ap.add_argument("--host", default="127.0.0.1")
@@ -425,6 +458,8 @@ def main(argv=None) -> None:
         raise SystemExit(f"error: {e}")
     log.info("%s: %s", engine.project, "full scan" if s["full"]
              else ("refreshed" if s.changed else "cache hit"))
+    if args.db is None:
+        repos.remember(engine.project)
     app = create_app(engine, args.lang)
     sock = bind_socket(args.host, args.port)
     port = sock.getsockname()[1]
