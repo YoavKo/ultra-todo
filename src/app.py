@@ -414,11 +414,12 @@ def cmd_ls(argv: list[str]) -> None:
         print("no repos yet; run: ultra-todo --target PATH")
         return
     width = max(len(r["name"]) for r in known)
-    for r in known:
+    num = len(str(len(known)))
+    for i, r in enumerate(known, 1):
         when = (datetime.fromisoformat(r["last_opened"]).astimezone().strftime("%Y-%m-%d %H:%M")
                 if r["last_opened"] else "")
         note = "" if r["exists"] else "  (missing)"
-        print(f"{when or '-':<16}  {r['name']:<{width}}  {r['path']}{note}")
+        print(f"{i:>{num}}  {when or '-':<16}  {r['name']:<{width}}  {r['path']}{note}")
 
 
 def main(argv=None) -> None:
@@ -427,14 +428,14 @@ def main(argv=None) -> None:
         return cmd_ls(argv[1:])
     if argv[:1] == ["open"]:
         if len(argv) < 2 or argv[1].startswith("-"):
-            raise SystemExit("usage: ultra-todo open NAME [options]  (see: ultra-todo ls)")
+            raise SystemExit("usage: ultra-todo open NAME|NUMBER [options]  (see: ultra-todo ls)")
         try:
             argv = ["--target", repos.resolve(argv[1])] + argv[2:]
         except EngineError as e:
             raise SystemExit(f"error: {e}")
     ap = argparse.ArgumentParser(
         prog="ultra-todo", description="Local GitOps task manager",
-        epilog="also: 'ultra-todo ls' lists known repos, 'ultra-todo open NAME' opens one by name")
+        epilog="also: 'ultra-todo ls' lists known repos, 'ultra-todo open NAME|NUMBER' opens one")
     ap.add_argument("--target", required=True, help="path of the git repository to manage")
     ap.add_argument("--lang", choices=SUPPORTED, help="default UI language")
     ap.add_argument("--host", default="127.0.0.1")

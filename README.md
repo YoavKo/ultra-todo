@@ -77,13 +77,15 @@ complete -F _utd utd
 utd                          # current directory
 utd --lang he                # flags only: still the current directory
 utd ~/work/some-repo --lang he --port 9000
-utd ls                       # known repos: last opened, name, path
+utd ls                       # known repos, numbered: last opened, name, path
 utd open some-repo           # open a known repo by name (Tab completes names)
+utd open 1                   # ...or by its number in ls (1 = most recently opened)
 ```
 
 Every repo you serve is remembered in `repos.json` in the user data dir
 (`~/.local/share/ultra-todo/` on Linux); `ultra-todo ls` and `ultra-todo open NAME` work without
-the shortcut too. Names match case-insensitively; if two repos share a name, use the path.
+the shortcut too. Names match case-insensitively; if two repos share a name, use the number or the path.
+Numbers follow the `ls` order, so they shift when you open a different repo.
 `ls` and `open` are commands, so to serve a directory with one of those names write `utd ./ls`.
 
 ### CLI flags

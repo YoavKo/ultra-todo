@@ -70,14 +70,22 @@ def known(registry: Path | None = None, db_path: Path | None = None) -> list[dic
 
 
 def resolve(name: str, registry: Path | None = None, db_path: Path | None = None) -> str:
-    """Path of the known repo called `name` (case-insensitive)."""
-    repos = [r for r in known(registry, db_path) if r["exists"]]
+    """Path of the known repo called `name` (case-insensitive), or numbered `name` in `ls`."""
+    listed = known(registry, db_path)
+    repos = [r for r in listed if r["exists"]]
     hits = [r for r in repos if r["name"] == name] or \
            [r for r in repos if fold(r["name"]) == fold(name)]
+    if not hits and name.isdigit():
+        n = int(name)
+        if not 1 <= n <= len(listed):
+            raise EngineError(f"no repo number {n} (ultra-todo ls shows 1-{len(listed)})")
+        if not listed[n - 1]["exists"]:
+            raise EngineError(f"repo {n} is missing: {listed[n - 1]['path']}")
+        return listed[n - 1]["path"]
     if len(hits) == 1:
         return hits[0]["path"]
     if hits:
-        raise EngineError(f"several repos are called {name!r}; use a path instead:\n"
+        raise EngineError(f"several repos are called {name!r}; use its number from ls or a path:\n"
                           + "\n".join("  " + r["path"] for r in hits))
     names = ", ".join(sorted({r["name"] for r in repos})) or "none yet"
     raise EngineError(f"no known repo called {name!r} (known: {names})")
