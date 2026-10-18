@@ -35,6 +35,7 @@
 <h2>הקשר</h2>
 <p>פרויקט חדש לגמרי בתיקייה <code>ultra-todo/</code> (Python 3.12, git 2.43). בונים את מנהל המשימות המתואר במסמך העיצוב: קובצי משימה בפורמט JSON5 בתוך <code>&lt;repo&gt;/.todo/tasks/</code>, אינדקס SQLite גלובלי בתיקיית המטמון של מערכת ההפעלה, פסילת מטמון לפי ה-hash של <code>HEAD</code>, אימות תלויות כגרף חסר מעגלים (DAG), והכול מוגש באמצעות Flask ו-waitress.</p>
 <p>דרישות שנוספו: <strong>תמיכה מלאה בעברית ובאנגלית</strong> (ממשק מתורגם, פריסת RTL, וטיפול נכון בתוכן עברי), בחירת השפה דרך דגל שורת פקודה כברירת מחדל ודרך מתג בתוך הממשק; <strong>תגיות (tags)</strong> עם סינון; <strong>תגובות</strong> (דיון) בכל משימה, עם קבצים מצורפים ותמונות; ותמיכה ב-<strong>uv</strong>.</p>
+<p>נוספו בהמשך: <strong>עדיפות</strong> (גבוהה / בינונית / נמוכה); <strong>חלונית תלויות</strong> בעמוד המשימה (מה חוסם אותה ומה היא חוסמת, עם הסרה בלחיצה); <strong>הרצת כמה מאגרים במקביל</strong> עם בחירת פורט פנוי אוטומטית; <strong>רשימת מאגרים מוכרים</strong> עם הפקודות <code>ls</code> / <code>open</code> / <code>forget</code>; וקיצור דרך ל-bash בשם <code>utd</code> עם השלמה בטאב.</p>
 
 <h2>מבנה הפרויקט</h2>
 <pre><code>ultra-todo/
@@ -43,14 +44,15 @@
 ├── requirements.txt     # נוצר ע"י uv export למי שלא משתמש ב-uv
 ├── babel.cfg
 ├── src/
-│   ├── app.py           # CLI (‎--target, --lang, --port, --auto-commit), נתיבים, בחירת שפה
-│   ├── engine.py        # קבצים, git, אינדקס SQLite, הידרציה
+│   ├── app.py           # CLI (‎--target, --lang, --port, ls/open/forget…), נתיבים, בחירת שפה
+│   ├── engine.py        # קבצים, git, אינדקס SQLite, הידרציה, סנכרון
+│   ├── repos.py         # רשימת המאגרים המוכרים (repos.json)
 │   ├── graph.py         # DAG וזיהוי מעגלים (DFS)
 │   ├── i18n.py          # Babel, קביעת שפה, כיוון כתיבה
 │   ├── translations/{he,en}/LC_MESSAGES/messages.po
 │   ├── static/{app.css,app.js}
 │   └── templates/{base,board,task,list}.html
-└── tests/               # pytest: engine, graph, i18n, routes</code></pre>
+└── tests/               # pytest: engine, sync, routes, i18n, repos</code></pre>
 <p>(במסמך העיצוב <code>templates/</code> נמצא לצד <code>src/</code>; כאן הוא בתוך <code>src/</code> כדי ש-Flask ימצא אותו כברירת מחדל – קל להזיז.)</p>
 
 <h2>מנוע הליבה (<code>engine.py</code>)</h2>
@@ -71,7 +73,7 @@
     </ul>
   </li>
 
-  <li><strong>קובץ משימה:</strong> <code>.todo/tasks/&lt;ID&gt;.json5</code> – שדות: <code>id, title, status, assignee, description, tags[], blocked_by[]</code> (ואופציונלית <code>lang</code>). קריאה עם <code>json5</code>; כתיבה דטרמיניסטית (מפתחות ממוינים, הזחה של 2 רווחים, שורה חדשה בסוף, <code>ensure_ascii=False</code> כדי שהעברית תישאר קריאה וה-diff נקי). כתיבה אטומית (קובץ זמני + <code>os.replace</code>). ה-ID מאומת מול <code>^[A-Za-z0-9_-]+$</code> למניעת path traversal.</li>
+  <li><strong>קובץ משימה:</strong> <code>.todo/tasks/&lt;ID&gt;.json5</code> – שדות: <code>id, title, status, priority, assignee, description, tags[], blocked_by[]</code> (ואופציונלית <code>lang</code>). שדות נוספים שהמשתמש הוסיף נשמרים בעת שמירה. קריאה עם <code>json5</code>; כתיבה דטרמיניסטית (מפתחות ממוינים, הזחה של 2 רווחים, שורה חדשה בסוף, <code>ensure_ascii=False</code> כדי שהעברית תישאר קריאה וה-diff נקי). כתיבה אטומית (קובץ זמני + <code>os.replace</code>). ה-ID מאומת מול <code>^[A-Za-z0-9_-]+$</code> למניעת path traversal.</li>
 
   <li><strong>אתחול והידרציה:</strong> <code>git rev-parse HEAD</code> ← השוואה ל-<code>projects.last_scanned_commit</code>.
     <ul>
@@ -107,6 +109,23 @@
 <h2>גרף תלויות (<code>graph.py</code>)</h2>
 <p>בונים רשימת שכנויות מטבלת <code>dependencies</code> של הפרויקט, מוסיפים את הקשת המוצעת, ומריצים DFS איטרטיבי עם צביעה לבן/אפור/שחור (ללא מגבלת רקורסיה); מחזירים את נתיב המעגל. הנתיבים מחזירים HTTP 400 עם הודעה מתורגמת ונתיב המעגל. בנוסף נדחות תלות עצמית ומזהים לא קיימים.</p>
 
+<h3>תלויות בעמוד המשימה</h3>
+<ul>
+  <li>חלונית "תלויות" בראש עמוד המשימה עם שתי רשימות: <strong>חסומה ע"י</strong> ו<strong>חוסמת את</strong>. כל שורה מציגה סטטוס, מזהה וכותרת עם קישור למשימה השנייה.</li>
+  <li>כפתור <strong>×</strong> בכל שורה מסיר את הקישור מיד (‏<code>POST /task/&lt;id&gt;/blocked_by/&lt;blocker&gt;/delete</code>), מכל אחד משני הצדדים, והמשתמש נשאר בעמוד שבו היה.</li>
+  <li>בורר + "הוסף" בכל רשימה (‏<code>POST /task/&lt;id&gt;/dependency</code> עם <code>kind=blocked_by|blocks</code>); קישור שיוצר מעגל נדחה עם הודעה.</li>
+  <li>אזהרה "ממתינה ל-N משימות פתוחות" כשיש חוסמים שלא הושלמו. על הכרטיסים בלוח: ⛔ N (חסומה ע"י) ו-➜ N (חוסמת).</li>
+  <li>שמירת טופס המשימה הראשי אינה משנה חוסמים (כדי שלא יימחקו בטעות); רק בטופס "משימה חדשה" בוחרים חוסמים בתיבות סימון.</li>
+</ul>
+
+<h2>עדיפות</h2>
+<ul>
+  <li>שדה <code>priority</code>: ‏<code>high | medium | low</code>, ברירת מחדל <code>medium</code> (גם למשימות קיימות בלי השדה). ערך אחר נדחה באימות.</li>
+  <li>באינדקס: עמודות <code>priority</code> ו-<code>priority_rank</code> בטבלת <code>tasks</code> (העלאת <code>SCHEMA_VERSION</code> ← האינדקס נבנה מחדש אוטומטית).</li>
+  <li>תצוגה: תג צבעוני (▲ גבוהה, ● בינונית, ▼ נמוכה) על הכרטיסים וברשימה, ופס צבע בצד הכרטיס; שדה בטופס, עמודה בתצוגת הרשימה וסינון בסרגל הסינון.</li>
+  <li>מיון: בעמודות הלוח וברשימה – לפי עדיפות (גבוהה קודם) ואז לפי מזהה.</li>
+</ul>
+
 <h2>עברית + אנגלית (<code>i18n.py</code>, תבניות, CSS)</h2>
 <ul>
   <li><strong>מחרוזות ממשק:</strong> Flask-Babel; כל התבניות משתמשות ב-<code>_()</code>; קטלוגי <code>.po</code> ל-<code>en</code> ול-<code>he</code>; הפקודות <code>pybabel extract/init/compile</code> מתועדות. צורות רבים מטופלות לכל קטלוג (בעברית יש כללי ריבוי נפרדים).</li>
@@ -118,10 +137,21 @@
 </ul>
 
 <h2>ממשק ונתיבים (<code>app.py</code>)</h2>
-<p><code>/</code> – לוח קנבן לפי סטטוס (סינון: אחראי, טקסט, <strong>תגיות</strong>); <code>/list</code>; <code>/task/&lt;id&gt;</code> – צפייה/עריכה; <code>POST /task</code> – יצירה; <code>POST /task/&lt;id&gt;</code> – עדכון; <code>POST /task/&lt;id&gt;/status</code> – גרירה; <code>POST /lang</code> – קביעת עוגיה; <code>GET /api/graph</code>; <code>GET /api/tags</code> – כל התגיות עם ספירה (להשלמה אוטומטית ולצ'יפים); <code>POST /task/&lt;id&gt;/comment</code> – יצירה (multipart); <code>POST /task/&lt;id&gt;/comment/&lt;cid&gt;</code> – עריכה; <code>POST /task/&lt;id&gt;/comment/&lt;cid&gt;/delete</code>; <code>GET /task/&lt;id&gt;/attachment/&lt;cid&gt;/&lt;name&gt;</code>. בעמוד המשימה תיבת כתיבת תגובה מעל שרשור שהחדשות בו למעלה.</p>
+<p><code>/</code> – לוח קנבן לפי סטטוס (סינון: אחראי, טקסט, עדיפות, <strong>תגיות</strong>); <code>/list</code>; <code>/task/&lt;id&gt;</code> – צפייה/עריכה; <code>POST /task</code> – יצירה; <code>POST /task/&lt;id&gt;</code> – עדכון; <code>POST /task/&lt;id&gt;/status</code> – גרירה; <code>POST /lang</code> – קביעת עוגיה; <code>GET /api/graph</code>; <code>GET /api/tags</code> – כל התגיות עם ספירה (להשלמה אוטומטית ולצ'יפים); <code>POST /task/&lt;id&gt;/comment</code> – יצירה (multipart); <code>POST /task/&lt;id&gt;/comment/&lt;cid&gt;</code> – עריכה; <code>POST /task/&lt;id&gt;/comment/&lt;cid&gt;/delete</code>; <code>GET /task/&lt;id&gt;/attachment/&lt;cid&gt;/&lt;name&gt;</code>; ‏<code>POST /task/&lt;id&gt;/dependency</code> ו-<code>POST /task/&lt;id&gt;/blocked_by/&lt;blocker&gt;/delete</code> – הוספה והסרה של תלויות; ‏<code>POST /sync/pull</code>, ‏<code>POST /sync/save</code>, ‏<code>GET /api/sync-status</code>. בעמוד המשימה תיבת כתיבת תגובה מעל שרשור שהחדשות בו למעלה.</p>
 <ul>
   <li><strong>ממשק תגיות וסינון:</strong> צ'יפים של תגיות על הכרטיסים; שדה תגיות עם השלמה אוטומטית (‏Enter/פסיק להוספה, Backspace להסרה) בטופס המשימה; סרגל סינון של צ'יפים לחיצים בלוח וברשימה. מצב הסינון נשמר ב-URL (<code>?tag=a&amp;tag=b&amp;match=any|all</code>, ברירת מחדל <code>all</code>/AND; מתג ל-"any") כך שאפשר לשתף ולשמור סימניה; השאילתה משתמשת ב-join על <code>tag_key</code> עם <code>GROUP BY ... HAVING COUNT(DISTINCT tag_key)=N</code> עבור AND. משתלב עם סינוני האחראי והטקסט. הצ'יפים עם <code>dir="auto"</code> כך שתגיות בעברית מוצגות נכון; תוויות הממשק של התגיות מתורגמות.</li>
-  <li>JavaScript קטן לגרירה ולמתג השפה. הפעלה: <code>python src/app.py --target PATH [--lang he|en] [--port N] [--auto-commit]</code>, מוגש ע"י <code>waitress.serve</code> כשהוא קשור ל-127.0.0.1 כברירת מחדל (כלי מקומי בלבד; בנוסף אסימון CSRF על כל ה-POST).</li>
+  <li>JavaScript קטן לגרירה ולמתג השפה. הפעלה: <code>uv run ultra-todo --target PATH [--lang he|en] [--port N] [--auto-commit]</code> (או <code>python src/app.py ...</code>), מוגש ע"י <code>waitress.serve</code> כשהוא קשור ל-127.0.0.1 כברירת מחדל (כלי מקומי בלבד; בנוסף אסימון CSRF על כל ה-POST).</li>
+</ul>
+
+<h2>כמה מאגרים ושורת הפקודה</h2>
+<ul>
+  <li><strong>כמה מופעים במקביל:</strong> בלי <code>--port</code>, כל מופע תופס את הפורט הפנוי הראשון החל מ-8080 (‏8080, 8081, …), ושורת הלוג מציינת איזה מאגר מוגש באיזו כתובת. הסוקט נקשר מראש ומועבר ל-waitress, כך שאין מרוץ בין בדיקה לקשירה. ‏<code>--port</code> מפורש שתפוס ← שגיאה בשורה אחת (במקום traceback). שם המאגר מופיע בכותרת לשונית הדפדפן. כמה מופעים חולקים בבטחה את קובץ המטמון (WAL, שורות נפרדות לכל פרויקט).</li>
+  <li><strong>רשימת מאגרים מוכרים</strong> (<code>repos.py</code>): כל מאגר שהוגש נרשם ב-<code>repos.json</code> בתיקיית נתוני המשתמש (<code>~/.local/share/ultra-todo/</code> בלינוקס) – לא במטמון, כדי שניקוי המטמון לא ימחק אותה. מאגרים שכבר נמצאים באינדקס המטמון מיובאים אליה. (‏<code>--db</code> מותאם אישית אינו נרשם.)</li>
+  <li><strong><code>ultra-todo ls</code></strong>: רשימה ממוספרת, האחרון שנפתח ראשון. עמודות: מספר, זמן פתיחה אחרון (שעון מקומי), <code>[x open, y done]</code>, שם, נתיב; ‏<code>(missing)</code> אם התיקייה כבר לא קיימת. "פתוחות" = todo, בעבודה וחסומות. לפני הספירה האינדקס של כל מאגר מתרענן (בדיקת cache-hit זולה), כך שהספירות כוללות <code>git pull</code> ועריכות שלא נעשה להן commit.</li>
+  <li><strong><code>ultra-todo open NAME|NUMBER [flags]</code></strong>: מגיש מאגר מוכר לפי שם (ללא תלות באותיות גדולות/קטנות) או לפי מספרו ב-<code>ls</code>; שם קודם למספר. שני מאגרים באותו שם ← שגיאה עם שני הנתיבים. המספרים עוקבים אחרי סדר <code>ls</code>, ולכן משתנים כשפותחים מאגר אחר (<code>open 1</code> = האחרון).</li>
+  <li><strong><code>ultra-todo forget NAME|NUMBER,...</code></strong>: מסיר מאגרים מהרשימה ואת השורות שלהם מאינדקס המטמון (אחרת היו מיובאים חזרה). שמות ומספרים, מופרדים ברווח או בפסיק (<code>3,5</code>). כולם מפוענחים מול אותה רשימה לפני שמשהו נמחק; אם אחד לא מוכר – לא נמחק כלום. אפשר לשכוח גם מאגרים חסרים. קובצי המאגר אינם נוגעים; הגשה מחדש מוסיפה אותו שוב.</li>
+  <li><strong>עזרה:</strong> ‏<code>-h</code>/<code>--help</code> מציג את הדגלים ורשימת פקודות; לכל פקודה עזרה משלה עם דוגמאות (<code>ls -h</code>, ‏<code>open -h</code>, ‏<code>forget -h</code>).</li>
+  <li><strong>קיצור הדרך <code>utd</code></strong> (פונקציית bash ב-<code>~/.bashrc</code>, הקוד המלא ב-README): ‏<code>utd [PATH] [flags]</code> מריץ <code>uv run --project &lt;checkout&gt; ultra-todo --target &lt;נתיב מלא&gt;</code> מכל תיקייה; ברירת המחדל היא התיקייה הנוכחית, ודגלים בלבד (<code>utd --lang he</code>) עדיין משתמשים בה. ‏<code>utd ls|open|forget</code> מועברים כמו שהם. ‏<code>utd</code> מגדיר <code>ULTRA_TODO_PROG=utd</code> כך שהעזרה והודעות השגיאה מדברות במונחי <code>utd</code> (ו-<code>--target</code> מוסתר). השלמה בטאב: פקודות ותיקיות קודם, שמות מאגרים אחרי <code>open</code>/<code>forget</code> (גם אחרי פסיק), אחר כך דגלים (<code>--lang</code> משלים ל-<code>en</code>/<code>he</code>). לתיקייה בשם <code>ls</code> כותבים <code>utd ./ls</code>.</li>
 </ul>
 
 <h2>סדר בנייה</h2>
@@ -134,6 +164,7 @@
   <li>נתיבי Flask ותבניות (אנגלית בלבד בשלב זה), זרימת שינוי, auto-commit אופציונלי, כפתורי עדכון ושמירת עבודה ו-<code>/api/sync-status</code>.</li>
   <li>‏i18n: חיבור Babel, חילוץ מחרוזות, קטלוג <code>he</code>, ‏CSS ל-RTL, ‏<code>dir=auto</code> לתוכן, מתג ודגל שורת פקודה.</li>
   <li>ליטוש: דפי שגיאה, ‏README עם הוראות שימוש ופקודות <code>pybabel</code>.</li>
+  <li>תוספות אחרי הגרסה הראשונה: חלונית תלויות, עדיפות, פורט פנוי אוטומטי, רשימת מאגרים (<code>ls</code>/<code>open</code>/<code>forget</code>) וקיצור <code>utd</code> עם השלמה בטאב.</li>
 </ol>
 
 <h2>אימות</h2>
@@ -141,6 +172,8 @@
   <li><strong>תגיות</strong> (<code>uv run pytest</code>): נרמול וסילוק כפילויות, מעבר הלוך-חזור של תגית בעברית, סינון AND מול OR, עריכת תגית מעדכנת את <code>task_tags</code>, הידרציה דיפרנציאלית מסירה תגיות של משימות שנמחקו, ספירות ב-<code>/api/tags</code>.</li>
   <li><strong>תגובות:</strong> סדר החדשות-למעלה; מחבר וחותמת זמן נקבעים בשרת; עריכה מעדכנת <code>edited_at</code> ונדחית למחבר אחר; העלאה והורדה של קובץ מצורף; ניקוי שם קובץ ודחיית path traversal; SVG מוגש כהורדה; קובץ גדול מדי נדחה; שתי תגובות במקביל יוצרות קבצים נפרדים; מחיקת תגובה דרך git (הידרציה דיפרנציאלית) מסירה את השורה; תגובה בעברית מוצגת בכיוון הנכון.</li>
   <li><strong>סנכרון</strong> (בדיקות עם remote חשוף זמני ושני clones): עדכון מבצע fast-forward והאינדקס משקף משימות ותגובות שנוספו/שונו/נמחקו; ענף מפוצל ← הצעת rebase; קונפליקט ב-rebase ← ביטול, מאגר נקי, רשימת קבצים; שמירה מוסיפה ל-stage רק את <code>.todo/</code> (קובץ מחוץ אליו נשאר ללא stage); דחיית push ← שגיאה ידידותית ובלי force; בלי upstream ← "עדכון" מושבת ו"שמירה" מציעה <code>push -u</code>; ספירות התג ו-ahead/behind נכונות; שום פעולה לא נתקעת על בקשת סיסמה.</li>
+  <li><strong>תלויות ועדיפות:</strong> הסרה והוספה של קישור מכל צד; קישור שיוצר מעגל נדחה; שמירת טופס המשימה לא מוחקת חוסמים; ברירת מחדל <code>medium</code>, ערך לא חוקי נדחה, מיון גבוהה ← בינונית ← נמוכה, סינון לפי עדיפות, תוויות בעברית.</li>
+  <li><strong>מאגרים ופורטים:</strong> שני מופעים בלי <code>--port</code> מקבלים פורטים שונים; פורט מפורש תפוס ← שגיאה ברורה; רישום ופתיחה לפי שם (ללא תלות באותיות) ולפי מספר; שם כפול ← שגיאה; מאגר חסר מדולג ב-<code>open</code>; ייבוא מהמטמון; ‏<code>forget</code> לפי מספרים ושמות, הכול-או-כלום, ולא מיובא חזרה; ספירות <code>[open, done]</code> כוללות עריכות שלא נעשה להן commit.</li>
   <li>‏<code>uv sync</code> מ-checkout נקי עובד; ‏<code>uv run ultra-todo --help</code> רץ.</li>
   <li><strong>pytest כללי:</strong> הידרציה (hit/miss/diff/מחיקה/שינוי שם); שינוי שלא נעשה לו commit מזוהה; מעגל ← 400; ID עם path traversal נדחה; כותרת בעברית עוברת קובץ ← SQLite ← HTML ללא שינוי; סדר קביעת השפה; תכונת <code>dir</code> לכל שפה.</li>
   <li><strong>ידני:</strong> יוצרים מאגר git זמני עם <code>.todo/tasks/</code>, מריצים, מוודאים שהאתחול השני מדלג על הסריקה (שורת לוג "cache hit"), עורכים קובץ ידנית ודרך commit בסגנון <code>git pull</code> ומוודאים רענון. מחליפים he↔en: הפריסה מתהפכת, משימה בעברית עם ID באנגלית מוצגת נכון, גרירה עובדת ב-RTL. מוודאים ש-<code>git status</code> במאגר היעד מציג רק שינויים בקובצי <code>.json5</code> (וקבצים מצורפים של משתמש) – ללא בינאריים של האפליקציה.</li>

@@ -1,7 +1,9 @@
 # ultra-todo — Implementation Plan (Flask, local-first, he + en)
 
 ## Context
-Greenfield project in `ultra-todo/` (Python 3.12, git 2.43). Build the self-hosted GitOps task manager from the design doc: JSON5 task files in `<repo>/.todo/tasks/`, a global SQLite index in the OS cache dir, HEAD-hash cache invalidation, DAG dependency validation, served by Flask + waitress. Added requirement: **full Hebrew + English support** — translated UI, RTL layout, correct Hebrew content handling, language chosen via CLI default plus in-UI toggle.
+Greenfield project in `ultra-todo/` (Python 3.12, git 2.43). Build the self-hosted GitOps task manager from the design doc: JSON5 task files in `<repo>/.todo/tasks/`, a global SQLite index in the OS cache dir, HEAD-hash cache invalidation, DAG dependency validation, served by Flask + waitress. Added requirement: **full Hebrew + English support** — translated UI, RTL layout, correct Hebrew content handling, language chosen via CLI default plus in-UI toggle; **tags** with filtering; per-task **comments** with attachments; **uv** support.
+
+Added later: **priority** (high / medium / low); a **dependencies panel** on the task page (what blocks it and what it blocks, one-click removal); **several repos at once** with automatic free-port selection; a **known-repos list** with `ls` / `open` / `forget` commands; and a `utd` bash shortcut with tab completion.
 
 ## Layout
 ```
@@ -11,14 +13,15 @@ ultra-todo/
 ├── requirements.txt          # generated via `uv export` for non-uv users (flask, waitress, json5, flask-babel, platformdirs)
 ├── babel.cfg
 ├── src/
-│   ├── app.py                # CLI (--target, --lang, --port, --auto-commit), routes, locale selector
-│   ├── engine.py             # task file I/O, git helpers, SQLite index, hydration
+│   ├── app.py                # CLI (--target, --lang, --port, ls/open/forget…), routes, locale selector
+│   ├── engine.py             # task file I/O, git helpers, SQLite index, hydration, sync
+│   ├── repos.py              # known-repos list (repos.json)
 │   ├── graph.py              # DAG + DFS cycle detection
 │   ├── i18n.py               # Babel setup, locale resolution, direction helper
 │   ├── translations/{he,en}/LC_MESSAGES/messages.po
 │   ├── static/{app.css,app.js}
 │   └── templates/{base,board,task,list}.html
-└── tests/                    # pytest: engine, graph, i18n, routes
+└── tests/                    # pytest: engine, sync, routes, i18n, repos
 ```
 (Design doc puts `templates/` beside `src/`; keeping it inside `src/` so Flask finds it by default — trivial to move.)
 
@@ -33,7 +36,7 @@ ultra-todo/
   - **Caveat vs. design doc**: attachments are user content in the repo (not DB binaries), so the "text-only repo" pillar becomes "no *app* binaries"; document recommending Git LFS for large files. Auto-commit stages the comment file + its attachments only.
   - **Index**: table `comments(project_path, task_id, id, author, created_at, edited_at, body)`, composite PK `(project_path, task_id, id)`, index on `(project_path, task_id, created_at DESC)`; `attachments` rows optional (or derived from the comment file). Hydration/differential hydration/delete handling extended to comment paths; comment body also searchable. Task card shows a comment count.
   - **Rendering**: comment body is escaped plain text with auto-linking and line breaks (or sanitized Markdown, decision deferred); `dir="auto"` for Hebrew/English mixes. Paste-an-image and drag-drop upload in the comment box (vanilla JS, `multipart/form-data`, CSRF token).
-- **Task file**: `.todo/tasks/<ID>.json5` — fields `id,title,status,assignee,description,tags[],blocked_by[]` (+ optional `lang`). Read with `json5`; write deterministically (sorted keys, 2-space indent, trailing newline, `ensure_ascii=False` so Hebrew stays readable and diffs are clean). Write atomically (temp file + `os.replace`). Validate `ID` against `^[A-Za-z0-9_-]+$` to prevent path traversal.
+- **Task file**: `.todo/tasks/<ID>.json5` — fields `id,title,status,priority,assignee,description,tags[],blocked_by[]` (+ optional `lang`). Extra user fields are kept on save. Read with `json5`; write deterministically (sorted keys, 2-space indent, trailing newline, `ensure_ascii=False` so Hebrew stays readable and diffs are clean). Write atomically (temp file + `os.replace`). Validate `ID` against `^[A-Za-z0-9_-]+$` to prevent path traversal.
 - **Boot/hydration**: `git rev-parse HEAD` → compare with `projects.last_scanned_commit`.
   - Hit → skip scan. Missing row → full hydrate. Differ → `git diff --name-status <old> HEAD -- .todo/tasks` and handle A/M/D/R (deletions remove rows; renames = delete+add). Fall back to full hydrate if `<old>` is unreachable (rebase/gc) or diff fails.
   - **Gap in the doc to resolve**: HEAD alone misses *uncommitted* edits to `.json5` files (hand edits, `--auto-commit` off). Plan: also fold `git status --porcelain -- .todo/tasks` into the cache key (HEAD + hash of dirty-file list/mtimes); if dirty, re-parse just those files. Non-git targets: error out with a clear message.
@@ -55,6 +58,19 @@ ultra-todo/
 ## Graph (`graph.py`)
 Build adjacency from `dependencies` for the project, add the proposed edge(s), iterative DFS with white/gray/black coloring (avoids recursion limit); return the cycle path. Routes return HTTP 400 with a translated message plus the cycle path. Also reject self-dependency and unknown IDs.
 
+### Dependencies on the task page
+- A "Dependencies" panel near the top of the task page with two lists: **Blocked by** and **Blocks**. Each row shows status, ID and title, linked to the other task.
+- **×** on a row removes that link at once (`POST /task/<id>/blocked_by/<blocker>/delete`), from either side; the user stays on the page they were on.
+- A picker + Add in each list (`POST /task/<id>/dependency` with `kind=blocked_by|blocks`); a link that would create a cycle is rejected with a message.
+- A "Waiting on N open tasks" warning when blockers aren't done. Board cards show ⛔ N (blocked by) and ➜ N (blocks).
+- Saving the main task form never changes blockers (so they can't be cleared by accident); only the New task form picks blockers, with checkboxes.
+
+## Priority
+- `priority` field: `high | medium | low`, default `medium` (also for existing tasks without it). Other values fail validation.
+- Index: `priority` and `priority_rank` columns on `tasks` (bumped `SCHEMA_VERSION` → index rebuilt automatically).
+- UI: coloured badge (▲ high, ● medium, ▼ low) on cards and in the list, plus a coloured card edge; form field, list column and a filter in the filter bar.
+- Sorting: board columns and the list order by priority (high first), then ID.
+
 ## Hebrew + English (`i18n.py`, templates, CSS)
 - **UI strings**: Flask-Babel, all templates use `_()`; `.po` catalogs for `en` and `he`; `pybabel extract/init/compile` documented. Plural forms handled per catalog (Hebrew has distinct plural rules).
 - **Locale resolution order**: `?lang=` → cookie `lang` (set by header toggle) → CLI `--lang` default → `Accept-Language` best match → `en`.
@@ -64,8 +80,17 @@ Build adjacency from `dependencies` for the project, add the proposed edge(s), i
 - **Dates/numbers** formatted via Babel for the active locale.
 
 ## UI / routes (`app.py`)
-`/` Kanban board by status (filters: assignee, text, **tags**), `/list`, `/task/<id>` view/edit, `POST /task` create, `POST /task/<id>` update, `POST /task/<id>/status` (drag-drop), `POST /lang` (set cookie), `GET /api/graph`, `GET /api/tags` (all tags + counts, for autocomplete/filter chips), `POST /task/<id>/comment` (create, multipart), `POST /task/<id>/comment/<cid>` (edit), `POST /task/<id>/comment/<cid>/delete`, `GET /task/<id>/attachment/<cid>/<name>`. The task page shows the comment composer above a newest-first thread.
-- **Tag UI/filtering**: tag chips on cards; tag input with autocomplete (Enter/comma to add, Backspace removes) in the task form; filter bar of clickable tag chips on board and list. Filter state lives in the URL (`?tag=a&tag=b&match=any|all`, default `all`/AND; "any" toggle) so views are shareable/bookmarkable; query uses `tag_key` joins with `GROUP BY ... HAVING COUNT(DISTINCT tag_key)=N` for AND. Combines with assignee/text filters. Chips use `dir="auto"` so Hebrew tags render correctly; tag-name UI labels translated. Small vanilla JS for drag-and-drop and language toggle. Launch: `python src/app.py --target PATH [--lang he|en] [--port N] [--auto-commit]`, served via `waitress.serve` bound to 127.0.0.1 by default (local-only tool; also add CSRF token on POSTs).
+`/` Kanban board by status (filters: assignee, text, priority, **tags**), `/list`, `/task/<id>` view/edit, `POST /task` create, `POST /task/<id>` update, `POST /task/<id>/status` (drag-drop), `POST /lang` (set cookie), `GET /api/graph`, `GET /api/tags` (all tags + counts, for autocomplete/filter chips), `POST /task/<id>/comment` (create, multipart), `POST /task/<id>/comment/<cid>` (edit), `POST /task/<id>/comment/<cid>/delete`, `GET /task/<id>/attachment/<cid>/<name>`, `POST /task/<id>/dependency` and `POST /task/<id>/blocked_by/<blocker>/delete` (add/remove links), `POST /sync/pull`, `POST /sync/save`, `GET /api/sync-status`. The task page shows the comment composer above a newest-first thread.
+- **Tag UI/filtering**: tag chips on cards; tag input with autocomplete (Enter/comma to add, Backspace removes) in the task form; filter bar of clickable tag chips on board and list. Filter state lives in the URL (`?tag=a&tag=b&match=any|all`, default `all`/AND; "any" toggle) so views are shareable/bookmarkable; query uses `tag_key` joins with `GROUP BY ... HAVING COUNT(DISTINCT tag_key)=N` for AND. Combines with assignee/text filters. Chips use `dir="auto"` so Hebrew tags render correctly; tag-name UI labels translated. Small vanilla JS for drag-and-drop and language toggle. Launch: `uv run ultra-todo --target PATH [--lang he|en] [--port N] [--auto-commit]` (or `python src/app.py ...`), served via `waitress.serve` bound to 127.0.0.1 by default (local-only tool; also add CSRF token on POSTs).
+
+## Several repos and the command line
+- **Several instances at once**: without `--port`, each instance takes the first free port from 8080 up (8080, 8081, …) and logs which repo is served where. The socket is bound up front and handed to waitress, so there is no check-then-bind race. A busy explicit `--port` → one-line error instead of a traceback. The repo name is in the browser tab title. Instances safely share the cache file (WAL, per-project rows).
+- **Known-repos list** (`repos.py`): every served repo is recorded in `repos.json` in the user data dir (`~/.local/share/ultra-todo/` on Linux) — not the cache, so clearing the cache doesn't lose it. Repos already in the cache index are imported. (A custom `--db` is not recorded.)
+- **`ultra-todo ls`**: numbered list, most recently opened first. Columns: number, last opened (local time), `[x open, y done]`, name, path; `(missing)` if the directory is gone. Open = todo, in progress and blocked. Each repo's index is refreshed first (a cheap cache-hit check), so counts include `git pull`s and uncommitted edits.
+- **`ultra-todo open NAME|NUMBER [flags]`**: serve a known repo by name (case-insensitive) or `ls` number; names win over numbers. Two repos with the same name → error listing both paths. Numbers follow the `ls` order, so they shift when another repo is opened (`open 1` = the last one).
+- **`ultra-todo forget NAME|NUMBER,...`**: remove repos from the list and their rows from the cache index (otherwise they'd be re-imported). Names and numbers, space- or comma-separated (`3,5`). All are resolved against one listing before anything is removed; if one is unknown, nothing is removed. Missing repos can be forgotten too. The repo's files are never touched; serving it again adds it back.
+- **Help**: `-h`/`--help` shows the flags and a commands list; each command has its own help with examples (`ls -h`, `open -h`, `forget -h`).
+- **`utd` shortcut** (bash function in `~/.bashrc`, full code in the README): `utd [PATH] [flags]` runs `uv run --project <checkout> ultra-todo --target <absolute path>` from any directory; the path defaults to the current directory, and flags alone (`utd --lang he`) still use it. `utd ls|open|forget` pass through. `utd` sets `ULTRA_TODO_PROG=utd` so help and errors speak in `utd` terms (and `--target` is hidden). Tab completion: commands and directories first, repo names after `open`/`forget` (also after a comma), then flags (`--lang` completes `en`/`he`). For a directory named `ls`, write `utd ./ls`.
 
 ## Build order
 **First action after approval** (plan mode only allows editing this file): create docs only (no app code yet): `ultra-todo/PLAN.md` (this plan), `ultra-todo/plan_he.html` (full Hebrew translation of the whole plan, standalone RTL page with `lang="he" dir="rtl"`, Hebrew-capable font, code/paths kept LTR via `<bdi>`/`dir="ltr"`, works in light/dark, printable), and `ultra-todo/README.md` (overview, pillars, repo/cache layout, task + comment file formats, `uv` install/run, CLI flags, he/en usage, `pybabel` workflow, Git LFS note for attachments, dev/test commands). Keep both updated as the design changes.
@@ -77,11 +102,14 @@ Build adjacency from `dependencies` for the project, add the proposed edge(s), i
 4. Flask routes + templates (en only), mutation flow, optional auto-commit, Update / Save work buttons and `/api/sync-status`.
 5. i18n: Babel wiring, extract strings, write `he` catalog, RTL CSS, `dir=auto` content, toggle + CLI flag.
 6. Polish: error pages, README with usage and `pybabel` commands.
+7. Later additions: dependencies panel, priority, automatic free port, known-repos list (`ls`/`open`/`forget`), `utd` shortcut with tab completion.
 
 ## Verification
 - Tags: `uv run pytest` cases — tag normalization/dedupe, Hebrew tag round-trip, AND vs OR filtering, tag edit updates `task_tags`, differential hydration removes tags of deleted tasks, `/api/tags` counts.
 - Comments: newest-first ordering; author/timestamp server-stamped; edit sets `edited_at` and rejects other authors; attachment upload/download round-trip; filename sanitization + path traversal rejected; SVG served as download; oversize rejected; two comments created concurrently produce distinct files; deleting a task's comment via git (differential hydration) removes the row; Hebrew comment renders with correct direction.
 - Sync (tests use a temp bare remote + two clones): Update fast-forwards and the index reflects added/changed/deleted tasks and comments; diverged branch → rebase offer; rebase conflict → aborted, repo clean, files listed; Save stages only `.todo/` (a file outside it stays unstaged); push rejected → friendly error, no force; no upstream → Update disabled, Save offers `push -u`; status badge counts and ahead/behind are correct; no operation hangs on a credential prompt.
+- Dependencies and priority: remove/add a link from either side; a cycle-making link is rejected; saving the task form keeps blockers; default `medium`, invalid value rejected, high → medium → low ordering, priority filter, Hebrew labels.
+- Repos and ports: two instances without `--port` get different ports; a busy explicit port → clear error; record and open by name (case-insensitive) and by number; duplicate name → error; missing repo skipped by `open`; import from the cache; `forget` by numbers and names, all-or-nothing, not re-imported; `[open, done]` counts include uncommitted edits.
 - `uv sync` from clean checkout works; `uv run ultra-todo --help` runs.
 - `pytest`: hydration hit/miss/diff/delete/rename; uncommitted edit detected; cycle → 400; path-traversal ID rejected; Hebrew title round-trips through file → SQLite → HTML unchanged; locale resolution order; `dir` attribute per locale.
 - Manual: create a scratch git repo with `.todo/tasks/`, run the app, confirm second boot skips scanning (log line "cache hit"), edit a file by hand and by `git pull`-style commit and confirm refresh. Switch he↔en: layout mirrors, Hebrew task with an English ID displays correctly, drag-drop works in RTL. Confirm `git status` of the target repo shows only `.json5` changes (no binaries).
