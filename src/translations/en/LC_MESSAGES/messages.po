@@ -1,0 +1,264 @@
+# English translations for ultra-todo.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the ultra-todo project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: ultra-todo 0.1.0\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-10-18 18:12+0300\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: en\n"
+"Language-Team: en <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+msgid "To do"
+msgstr ""
+
+msgid "In progress"
+msgstr ""
+
+msgid "Done"
+msgstr ""
+
+msgid "Blocked"
+msgstr ""
+
+msgid "This branch has no upstream. Use “Save work” to publish it first."
+msgstr ""
+
+msgid "This repository has no remote configured."
+msgstr ""
+
+msgid "Your branch and the remote have diverged. Update with rebase?"
+msgstr ""
+
+msgid "Update stopped: the same files changed on both sides. Nothing was changed; resolve these files in git:"
+msgstr ""
+
+msgid "Updated, but re-applying your local edits conflicted. Your edits are kept in git stash. Files:"
+msgstr ""
+
+msgid "The remote has newer changes. Click “Update” first, then save again."
+msgstr ""
+
+msgid "Push failed."
+msgstr ""
+
+msgid "Update failed."
+msgstr ""
+
+msgid "Invalid or missing CSRF token. Reload the page."
+msgstr ""
+
+#, python-format
+msgid "Dependency cycle: %(cycle)s"
+msgstr ""
+
+msgid "Only the author can change this comment."
+msgstr ""
+
+msgid "Not found"
+msgstr ""
+
+#, python-format
+msgid "Not found: %(what)s"
+msgstr ""
+
+#, python-format
+msgid "Saved, but auto-commit failed: %(err)s"
+msgstr ""
+
+#, python-format
+msgid "Task %(id)s created."
+msgstr ""
+
+msgid "Task saved."
+msgstr ""
+
+#, python-format
+msgid "Task %(id)s deleted."
+msgstr ""
+
+msgid "Updated. Index rebuilt."
+msgstr ""
+
+msgid "Already up to date."
+msgstr ""
+
+#, python-format
+msgid "Updated: %(a)d added, %(u)d changed, %(d)d removed, %(c)d comments."
+msgstr ""
+
+msgid "Committed and pushed."
+msgstr ""
+
+msgid "Pushed."
+msgstr ""
+
+msgid "Committed."
+msgstr ""
+
+msgid "Nothing to save."
+msgstr ""
+
+msgid "Search tasks and comments…"
+msgstr ""
+
+msgid "Assignee"
+msgstr ""
+
+msgid "All assignees"
+msgstr ""
+
+msgid "Match any tag"
+msgstr ""
+
+msgid "Filter"
+msgstr ""
+
+msgid "Clear"
+msgstr ""
+
+#, python-format
+msgid "%(num)d task"
+msgid_plural "%(num)d tasks"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Tags"
+msgstr ""
+
+msgid "Board"
+msgstr ""
+
+msgid "List"
+msgstr ""
+
+msgid "New task"
+msgstr ""
+
+msgid "Branch"
+msgstr ""
+
+msgid "Pull from the remote and refresh tasks"
+msgstr ""
+
+msgid "Update"
+msgstr ""
+
+msgid "Commit task changes and push"
+msgstr ""
+
+msgid "Save work"
+msgstr ""
+
+msgid "Commit message"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Commit & push"
+msgstr ""
+
+#, python-format
+msgid "%(n)s changes"
+msgstr ""
+
+msgid "No uncommitted changes; unpushed commits will be pushed."
+msgstr ""
+
+msgid "Update with rebase"
+msgstr ""
+
+msgid "Publish branch"
+msgstr ""
+
+msgid "no upstream"
+msgstr ""
+
+msgid "Working…"
+msgstr ""
+
+msgid "Delete this? This cannot be undone."
+msgstr ""
+
+msgid "Error"
+msgstr ""
+
+msgid "Blocked by"
+msgstr ""
+
+msgid "Back"
+msgstr ""
+
+msgid "ID"
+msgstr ""
+
+msgid "Title"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "No tasks match."
+msgstr ""
+
+msgid "optional, generated if empty"
+msgstr ""
+
+msgid "Content language"
+msgstr ""
+
+msgid "Auto-detect"
+msgstr ""
+
+msgid "Remove"
+msgstr ""
+
+msgid "Add tag, press Enter"
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "Create"
+msgstr ""
+
+msgid "Save"
+msgstr ""
+
+msgid "Blocks"
+msgstr ""
+
+msgid "Delete task"
+msgstr ""
+
+msgid "Discussion"
+msgstr ""
+
+msgid "Write a comment… (paste or drop images/files)"
+msgstr ""
+
+msgid "Comment"
+msgstr ""
+
+msgid "edited"
+msgstr ""
+
+msgid "Edit"
+msgstr ""
+
+msgid "Delete"
+msgstr ""
+
+msgid "No comments yet."
+msgstr ""
+

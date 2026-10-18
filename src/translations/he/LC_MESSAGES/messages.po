@@ -1,0 +1,264 @@
+# Hebrew translations for ultra-todo.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the ultra-todo project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: ultra-todo 0.1.0\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-10-18 18:12+0300\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: he\n"
+"Language-Team: he <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+msgid "To do"
+msgstr "לביצוע"
+
+msgid "In progress"
+msgstr "בתהליך"
+
+msgid "Done"
+msgstr "הושלם"
+
+msgid "Blocked"
+msgstr "חסום"
+
+msgid "This branch has no upstream. Use “Save work” to publish it first."
+msgstr "לענף הזה אין upstream. השתמשו ב„שמירת עבודה” כדי לפרסם אותו קודם."
+
+msgid "This repository has no remote configured."
+msgstr "למאגר הזה לא מוגדר remote."
+
+msgid "Your branch and the remote have diverged. Update with rebase?"
+msgstr "הענף שלך והשרת התפצלו. לעדכן עם rebase?"
+
+msgid "Update stopped: the same files changed on both sides. Nothing was changed; resolve these files in git:"
+msgstr "העדכון נעצר: אותם קבצים שונו בשני הצדדים. שום דבר לא שונה; יש לפתור את הקבצים האלה ב-git:"
+
+msgid "Updated, but re-applying your local edits conflicted. Your edits are kept in git stash. Files:"
+msgstr "העדכון בוצע, אך החלת השינויים המקומיים שלך נתקלה בקונפליקט. השינויים שמורים ב-git stash. קבצים:"
+
+msgid "The remote has newer changes. Click “Update” first, then save again."
+msgstr "בשרת יש שינויים חדשים יותר. לחצו קודם על „עדכון” ואז שמרו שוב."
+
+msgid "Push failed."
+msgstr "ה-push נכשל."
+
+msgid "Update failed."
+msgstr "העדכון נכשל."
+
+msgid "Invalid or missing CSRF token. Reload the page."
+msgstr "אסימון CSRF חסר או שגוי. טענו את הדף מחדש."
+
+#, python-format
+msgid "Dependency cycle: %(cycle)s"
+msgstr "מעגל תלויות: %(cycle)s"
+
+msgid "Only the author can change this comment."
+msgstr "רק מחבר/ת התגובה יכול/ה לשנות אותה."
+
+msgid "Not found"
+msgstr "לא נמצא"
+
+#, python-format
+msgid "Not found: %(what)s"
+msgstr "לא נמצא: %(what)s"
+
+#, python-format
+msgid "Saved, but auto-commit failed: %(err)s"
+msgstr "נשמר, אך ה-commit האוטומטי נכשל: %(err)s"
+
+#, python-format
+msgid "Task %(id)s created."
+msgstr "המשימה %(id)s נוצרה."
+
+msgid "Task saved."
+msgstr "המשימה נשמרה."
+
+#, python-format
+msgid "Task %(id)s deleted."
+msgstr "המשימה %(id)s נמחקה."
+
+msgid "Updated. Index rebuilt."
+msgstr "עודכן. האינדקס נבנה מחדש."
+
+msgid "Already up to date."
+msgstr "הכול כבר מעודכן."
+
+#, python-format
+msgid "Updated: %(a)d added, %(u)d changed, %(d)d removed, %(c)d comments."
+msgstr "עודכן: %(a)d נוספו, %(u)d שונו, %(d)d הוסרו, %(c)d תגובות."
+
+msgid "Committed and pushed."
+msgstr "בוצע commit ו-push."
+
+msgid "Pushed."
+msgstr "בוצע push."
+
+msgid "Committed."
+msgstr "בוצע commit."
+
+msgid "Nothing to save."
+msgstr "אין מה לשמור."
+
+msgid "Search tasks and comments…"
+msgstr "חיפוש במשימות ובתגובות…"
+
+msgid "Assignee"
+msgstr "אחראי/ת"
+
+msgid "All assignees"
+msgstr "כל האחראים"
+
+msgid "Match any tag"
+msgstr "התאמה לאחת התגיות"
+
+msgid "Filter"
+msgstr "סינון"
+
+msgid "Clear"
+msgstr "ניקוי"
+
+#, python-format
+msgid "%(num)d task"
+msgid_plural "%(num)d tasks"
+msgstr[0] "משימה אחת"
+msgstr[1] "%(num)d משימות"
+
+msgid "Tags"
+msgstr "תגיות"
+
+msgid "Board"
+msgstr "לוח"
+
+msgid "List"
+msgstr "רשימה"
+
+msgid "New task"
+msgstr "משימה חדשה"
+
+msgid "Branch"
+msgstr "ענף"
+
+msgid "Pull from the remote and refresh tasks"
+msgstr "משיכה מהשרת ורענון המשימות"
+
+msgid "Update"
+msgstr "עדכון"
+
+msgid "Commit task changes and push"
+msgstr "commit לשינויי המשימות ו-push"
+
+msgid "Save work"
+msgstr "שמירת עבודה"
+
+msgid "Commit message"
+msgstr "הודעת commit"
+
+msgid "Cancel"
+msgstr "ביטול"
+
+msgid "Commit & push"
+msgstr "commit ו-push"
+
+#, python-format
+msgid "%(n)s changes"
+msgstr "%(n)s שינויים"
+
+msgid "No uncommitted changes; unpushed commits will be pushed."
+msgstr "אין שינויים שלא נשמרו; commits שטרם נדחפו יידחפו."
+
+msgid "Update with rebase"
+msgstr "עדכון עם rebase"
+
+msgid "Publish branch"
+msgstr "פרסום הענף"
+
+msgid "no upstream"
+msgstr "ללא upstream"
+
+msgid "Working…"
+msgstr "עובד…"
+
+msgid "Delete this? This cannot be undone."
+msgstr "למחוק? לא ניתן לבטל פעולה זו."
+
+msgid "Error"
+msgstr "שגיאה"
+
+msgid "Blocked by"
+msgstr "חסום ע״י"
+
+msgid "Back"
+msgstr "חזרה"
+
+msgid "ID"
+msgstr "מזהה"
+
+msgid "Title"
+msgstr "כותרת"
+
+msgid "Status"
+msgstr "סטטוס"
+
+msgid "No tasks match."
+msgstr "אין משימות מתאימות."
+
+msgid "optional, generated if empty"
+msgstr "אופציונלי, ייווצר אוטומטית אם ריק"
+
+msgid "Content language"
+msgstr "שפת התוכן"
+
+msgid "Auto-detect"
+msgstr "זיהוי אוטומטי"
+
+msgid "Remove"
+msgstr "הסרה"
+
+msgid "Add tag, press Enter"
+msgstr "הוסיפו תגית ולחצו Enter"
+
+msgid "Description"
+msgstr "תיאור"
+
+msgid "Create"
+msgstr "יצירה"
+
+msgid "Save"
+msgstr "שמירה"
+
+msgid "Blocks"
+msgstr "חוסם את"
+
+msgid "Delete task"
+msgstr "מחיקת משימה"
+
+msgid "Discussion"
+msgstr "דיון"
+
+msgid "Write a comment… (paste or drop images/files)"
+msgstr "כתבו תגובה… (אפשר להדביק או לגרור תמונות/קבצים)"
+
+msgid "Comment"
+msgstr "הגבה"
+
+msgid "edited"
+msgstr "נערך"
+
+msgid "Edit"
+msgstr "עריכה"
+
+msgid "Delete"
+msgstr "מחיקה"
+
+msgid "No comments yet."
+msgstr "אין תגובות עדיין."
+

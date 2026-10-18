@@ -71,7 +71,7 @@ def test_comment_with_attachment(client):
 def test_language_and_direction(client):
     html = client.get("/", headers={"Accept-Language": "he"}).get_data(as_text=True)
     assert re.search(r'<html lang="he" dir="rtl">', html)
-    # TODO(i18n): Hebrew strings
+    assert "לוח" in html and "שמירת עבודה" in html
     html = client.get("/?lang=en", headers={"Accept-Language": "he"}).get_data(as_text=True)
     assert '<html lang="en" dir="ltr">' in html
     post(client, "/lang", data={"lang": "he"})
