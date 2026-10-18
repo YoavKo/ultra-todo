@@ -20,6 +20,7 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 - **Comments** per task: newest first, author and time stamped by the server, editable, with image/file attachments stored next to the task
 - **Update** button: `git pull --ff-only`, then the index is refreshed from the diff (rebase offered if the branch diverged; aborted cleanly on conflict)
 - **Save work** button: commits only `.todo/` changes (editable message) and pushes; never force-pushes, never stages files outside `.todo/`
+- **Several repos** – serve many at once (free ports picked automatically); `ls` / `open` / `forget` manage the list of known repos, with a `utd` bash shortcut and tab completion
 - Hebrew + English: translated UI, RTL layout, `dir="auto"` for mixed-language content; language set with `--lang` and/or the in-app toggle
 
 ## Install and run (uv)
@@ -33,10 +34,62 @@ uv run ultra-todo --target /path/to/repo --lang he --port 9000 --auto-commit
 Global install: `uv tool install .` then `ultra-todo --target ...`.
 Without uv: `pip install -r requirements.txt && python src/app.py --target ...`.
 
-### Shell shortcut
+Several repos can be served at once: without `--port`, each instance takes the first free port
+from 8080 up (8080, 8081, …) and logs which repo it serves where; the browser tab shows the repo name.
 
-Add this to `~/.bashrc` (adjust the checkout path) to run `utd [path] [flags]` from anywhere, with tab completion;
-the path defaults to the current directory and extra flags are passed through:
+## Known repos: `ls`, `open`, `forget`
+
+Every repo you serve is remembered, so you can list it and open it again by name or number.
+Each command has its own help: `ultra-todo ls -h`, `ultra-todo open -h`, `ultra-todo forget -h`.
+
+```bash
+ultra-todo ls                       # numbered list, most recently opened first
+ultra-todo open my-repo             # serve a known repo by name (case-insensitive)
+ultra-todo open 1 --lang he         # ...or by its ls number; serve flags still work
+ultra-todo forget 3,5               # remove repos from the list (or: forget old-repo 4)
+```
+
+`ls` output:
+
+```
+1  2026-10-19 01:40  [2 open, 1 done]  my-repo     /home/me/work/my-repo
+2  2026-10-17 18:02  [0 open, 7 done]  old-thing   /home/me/old-thing  (missing)
+```
+
+- **number** – use it with `open` / `forget`. Numbers follow the `ls` order, so they shift when you open another repo (`open 1` = the last one you used).
+- **last opened** – local time; `-` for repos imported from the cache that haven't been opened since.
+- **[x open, y done]** – open = todo, in progress and blocked. Each repo's index is refreshed first, so counts include `git pull`s and uncommitted edits made outside ultra-todo.
+- **(missing)** – the directory is gone; it can't be opened but can be forgotten.
+
+Details:
+- The list lives in `repos.json` in the user data dir (`~/.local/share/ultra-todo/` on Linux), not in the cache, so clearing the cache doesn't lose it. Repos already in the cache index are imported.
+- If two repos share a name, `open` lists both paths; use the number or the path.
+- `forget` resolves all names/numbers against one listing first (so `3,5` means what `ls` showed), removes nothing if any is unknown, and also drops the repo's cached index. The repo's files are never touched; serving it again adds it back.
+
+## Shell shortcut: `utd`
+
+`utd` is a bash function that runs ultra-todo from any directory. The path defaults to the
+current directory, extra flags pass through, and `-h` / error messages speak in `utd` terms.
+
+```bash
+utd                          # serve the current directory
+utd --lang he                # flags only: still the current directory
+utd ~/work/some-repo --port 9000
+utd ls                       # known repos
+utd open some-repo           # by name; Tab completes names
+utd open 1                   # by ls number
+utd forget 3,5               # by numbers or names; Tab completes names, also after a comma
+utd -h                       # flags and commands; utd ls -h / open -h / forget -h for each command
+```
+
+Tab completion: commands and directories first, repo names after `open` / `forget`, then flags
+(`--lang` completes `en` / `he`). `ls`, `open` and `forget` are commands, so to serve a directory
+with one of those names write `utd ./ls`.
+
+Add this to `~/.bashrc` (set `proj` to your checkout), then `source ~/.bashrc`:
+
+<details>
+<summary><code>utd</code> function and completion</summary>
 
 ```bash
 # ultra-todo: utd [path] [flags] | utd ls | utd open NAME|N [flags] | utd forget NAME|N,...
@@ -85,33 +138,22 @@ _utd() {
 complete -F _utd utd
 ```
 
-```bash
-utd                          # current directory
-utd --lang he                # flags only: still the current directory
-utd ~/work/some-repo --lang he --port 9000
-utd ls                       # known repos, numbered: last opened, [x open, y done], name, path
-utd open some-repo           # open a known repo by name (Tab completes names)
-utd open 1                   # ...or by its number in ls (1 = most recently opened)
-utd forget 3,5               # drop repos from the list (names or numbers; files untouched)
-```
-
-Every repo you serve is remembered in `repos.json` in the user data dir
-(`~/.local/share/ultra-todo/` on Linux); `ultra-todo ls` and `ultra-todo open NAME` work without
-the shortcut too. Names match case-insensitively; if two repos share a name, use the number or the path.
-Numbers follow the `ls` order, so they shift when you open a different repo.
-`forget` also drops the repo from the cache index; opening it again adds it back.
-`ls` and `open` are commands, so to serve a directory with one of those names write `utd ./ls`.
+</details>
 
 ### CLI flags
 
 | Flag | Meaning |
 |---|---|
-| `--target PATH` | Git repo to manage (must contain or get `.todo/tasks/`) |
+| `--target PATH` | Git repo to manage (must contain or get `.todo/tasks/`); `utd` sets it for you |
 | `--lang he\|en` | Default UI language (users can override in the UI) |
-| `--port N` | Port (default: first free port from 8080 up, so several repos can run at once) |
+| `--host ADDR` | Address to bind (default `127.0.0.1`, local only) |
+| `--port N` | Port (default: first free port from 8080 up); a busy explicit port is an error |
 | `--auto-commit` | Commit each change as `task: update <ID>` |
 | `--author NAME` | Override the comment author (default: `git config user.name`) |
 | `--max-attachment-mb N` | Attachment size limit (default 10) |
+| `--db PATH` | Use another SQLite index file (repos served this way are not added to the known list) |
+| `--threads N` | Server threads (default 8) |
+| `--debug` | Flask dev server with auto-reload and debug logging |
 
 ## File formats
 
@@ -168,8 +210,8 @@ uv run pybabel compile -d src/translations
 ## Development
 
 ```bash
-uv run pytest                      # engine, sync (temp bare remote + 2 clones), routes, i18n
+uv run pytest                      # engine, sync (temp bare remote + 2 clones), routes, i18n, repos list
 uv run ultra-todo --target . --debug   # Flask dev server with reload
 ```
 
-Layout: `src/engine.py` (files, git, SQLite index, sync), `src/graph.py` (DAG), `src/i18n.py`, `src/app.py` (routes + CLI), `src/templates/`, `src/static/`, `src/translations/`.
+Layout: `src/engine.py` (files, git, SQLite index, sync), `src/graph.py` (DAG), `src/repos.py` (known-repos list), `src/i18n.py`, `src/app.py` (routes + CLI), `src/templates/`, `src/static/`, `src/translations/`.
