@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>תוכנית GitFlow-Task</title>
+<style>
+  :root { --bg:#fff; --fg:#1d2330; --muted:#5b6475; --line:#d9dde6; --code:#f3f5f9; --accent:#2457d6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171f; --fg:#e6e9f0; --muted:#9aa3b5; --line:#2b3140; --code:#1d222e; --accent:#7ea2ff; }
+  }
+  body { margin:0; background:var(--bg); color:var(--fg);
+    font-family:"Heebo","Assistant","Segoe UI","Arial Hebrew",Arial,sans-serif; line-height:1.75; }
+  main { max-width:860px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:1.9rem; margin:0 0 .25rem; }
+  h2 { font-size:1.35rem; margin:2.2rem 0 .6rem; padding-bottom:.3rem; border-bottom:1px solid var(--line); }
+  h3 { font-size:1.05rem; margin:1.4rem 0 .3rem; }
+  p.sub { color:var(--muted); margin:0 0 1rem; }
+  ul { padding-inline-start:1.4rem; } li { margin:.3rem 0; } ul ul { margin-top:.2rem; }
+  code { background:var(--code); padding:.1em .35em; border-radius:4px; direction:ltr; unicode-bidi:isolate;
+    font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.9em; }
+  pre { background:var(--code); padding:12px 14px; border-radius:8px; overflow-x:auto; direction:ltr; text-align:left; line-height:1.5; }
+  pre code { background:none; padding:0; }
+  table { border-collapse:collapse; width:100%; } th,td { border:1px solid var(--line); padding:6px 10px; text-align:start; }
+  .note { border-inline-start:4px solid var(--accent); background:var(--code); padding:8px 12px; border-radius:6px; }
+  @media print { body { background:#fff; color:#000; } pre,code { background:#f3f3f3; } }
+</style>
+</head>
+<body>
+<main>
+
+<h1>GitFlow-Task – תוכנית מימוש</h1>
+<p class="sub">מנהל משימות מקומי (Flask), בגישת local-first ו-GitOps, עם תמיכה מלאה בעברית ובאנגלית</p>
+
+<h2>הקשר</h2>
+<p>פרויקט חדש לגמרי בתיקייה <code>/home/yoavko/Documents/projects/ultra-todo</code> (תיקייה ריקה, Python 3.12, git 2.43). בונים את מנהל המשימות המתואר במסמך העיצוב: קובצי משימה בפורמט JSON5 בתוך <code>&lt;repo&gt;/.todo/tasks/</code>, אינדקס SQLite גלובלי בתיקיית המטמון של מערכת ההפעלה, פסילת מטמון לפי ה-hash של <code>HEAD</code>, אימות תלויות כגרף חסר מעגלים (DAG), והכול מוגש באמצעות Flask ו-waitress.</p>
+<p>דרישות שנוספו: <strong>תמיכה מלאה בעברית ובאנגלית</strong> (ממשק מתורגם, פריסת RTL, וטיפול נכון בתוכן עברי), בחירת השפה דרך דגל שורת פקודה כברירת מחדל ודרך מתג בתוך הממשק; <strong>תגיות (tags)</strong> עם סינון; <strong>תגובות</strong> (דיון) בכל משימה, עם קבצים מצורפים ותמונות; ותמיכה ב-<strong>uv</strong>.</p>
+
+<h2>מבנה הפרויקט</h2>
+<pre><code>ultra-todo/
+├── pyproject.toml       # מנוהל ב-uv: תלויות, סקריפט gitflow-task, קבוצת dev (pytest)
+├── uv.lock              # קובץ נעילה (נכנס ל-git)
+├── requirements.txt     # נוצר ע"י uv export למי שלא משתמש ב-uv
+├── babel.cfg
+├── src/
+│   ├── app.py           # CLI (‎--target, --lang, --port, --auto-commit), נתיבים, בחירת שפה
+│   ├── engine.py        # קבצים, git, אינדקס SQLite, הידרציה
+│   ├── graph.py         # DAG וזיהוי מעגלים (DFS)
+│   ├── i18n.py          # Babel, קביעת שפה, כיוון כתיבה
+│   ├── translations/{he,en}/LC_MESSAGES/messages.po
+│   ├── static/{app.css,app.js}
+│   └── templates/{base,board,task,list}.html
+└── tests/               # pytest: engine, graph, i18n, routes</code></pre>
+<p>(במסמך העיצוב <code>templates/</code> נמצא לצד <code>src/</code>; כאן הוא בתוך <code>src/</code> כדי ש-Flask ימצא אותו כברירת מחדל – קל להזיז.)</p>
+
+<h2>מנוע הליבה (<code>engine.py</code>)</h2>
+<ul>
+  <li><strong>נתיב המטמון:</strong> <code>platformdirs.user_cache_dir("gitflow-task")/app_global_index.sqlite3</code>. הטבלאות <code>projects</code>, <code>tasks</code>, <code>dependencies</code> בדיוק כפי שבמסמך. מוסיפים <code>PRAGMA journal_mode=WAL</code>, <code>foreign_keys=ON</code>, חיבור נפרד לכל בקשה/תהליכון (waitress הוא רב-תהליכוני), וכתיבות מסודרות באמצעות נעילה.</li>
+
+  <li><strong>תגיות:</strong> לכל משימה יש רשימה <code>tags: []</code> בקובץ ה-JSON5. נרמול בכתיבה (NFC, חיתוך רווחים, צמצום רווחים כפולים, case-fold להתאמה תוך שמירת הכתיב המקורי להצגה, הסרת כפילויות, אורך מקסימלי). תגיות בעברית נתמכות במלואן. טבלה חדשה <code>task_tags(project_path, task_id, tag, tag_key)</code> עם מפתח ראשי מורכב <code>(project_path, task_id, tag_key)</code> ואינדקס על <code>(project_path, tag_key)</code>; <code>tag_key</code> הוא הצורה המנורמלת (NFC + casefold) המשמשת לסינון. ההידרציה (מלאה ודיפרנציאלית) והעדכונים מתחזקים אותה לצד <code>tasks</code>. מעלים <code>schema_version</code> (‏<code>PRAGMA user_version</code>) ובונים את האינדקס מחדש כשיש אי-התאמה – המטמון חד-פעמי, לכן "מיגרציה" = מחיקה והידרציה מחדש.</li>
+
+  <li><strong>תגובות (שרשור דיון):</strong> לכל משימה יש תיקייה <code>.todo/tasks/&lt;ID&gt;/</code> (נוצרת בעת הצורך). קובץ אחד לכל תגובה – <code>.todo/tasks/&lt;ID&gt;/comments/&lt;UTC-ts&gt;-&lt;shortid&gt;.json5</code> – עם <code>{id, author, created_at, edited_at?, body, attachments:[{name, file, mime, size}]}</code>. כך שני אנשים שמגיבים במקביל אף פעם לא נוגעים באותו קובץ (עקרון אפס-הקונפליקטים; מערך <code>comments[]</code> יחיד בקובץ המשימה היה יוצר קונפליקטים). הסורק מחפש משימות רק ב-<code>.todo/tasks/*.json5</code> ברמה העליונה, ותגובות ב-<code>&lt;ID&gt;/comments/*.json5</code>.
+    <ul>
+      <li><strong>מחבר וזמן:</strong> השרת קובע את <code>created_at</code> (UTC, ISO-8601) ואת המחבר מתוך <code>git config user.name</code>/<code>user.email</code> (ברירת מחדל: משתמש מערכת ההפעלה; אפשר לדרוס עם <code>--author</code>). ערכים שנשלחים מהלקוח מתעלמים מהם. התצוגה לפי השפה ואזור הזמן של הצופה (Babel).</li>
+      <li><strong>סדר:</strong> החדשות למעלה (<code>ORDER BY created_at DESC, id DESC</code>).</li>
+      <li><strong>עריכה:</strong> אפשר לערוך את גוף התגובה (ולהוסיף/להסיר קבצים מצורפים) דרך <code>POST /task/&lt;id&gt;/comment/&lt;cid&gt;</code>; מעדכן <code>edited_at</code> ומציג תווית "נערך". גם מחיקה נתמכת (מסירה את הקובץ ואת הקבצים המצורפים שלו). עריכה/מחיקה מותרות רק למחבר המקורי (כלי מקומי מבוסס אמון, אך זה מונע טעויות) – קל לבטל. היסטוריית git היא מסלול הביקורת האמיתי.</li>
+      <li><strong>קבצים מצורפים (תמונות/קבצים):</strong> נשמרים ב-<code>.todo/tasks/&lt;ID&gt;/attachments/&lt;comment-id&gt;/&lt;sanitized-name&gt;</code>; שם הקובץ מנוקה (הסרת רכיבי נתיב, NFC, סיומת למניעת התנגשות), מגבלת גודל (ברירת מחדל 10MB, ניתנת להגדרה ב-<code>--max-attachment-mb</code>), הגשה דרך <code>GET /task/&lt;id&gt;/attachment/&lt;cid&gt;/&lt;name&gt;</code> עם <code>Content-Disposition</code> ו-<code>X-Content-Type-Options: nosniff</code>; רק תמונות רסטר (png/jpg/gif/webp) מוצגות בתוך הדף כתמונות ממוזערות/לייטבוקס – SVG ו-HTML תמיד מורדים כהורדה כדי למנוע הרצת סקריפטים. מניעת path traversal ע"י פתרון הנתיב ובדיקה שהוא נשאר בתוך תיקיית המשימה.</li>
+      <li><strong>הסתייגות ביחס למסמך העיצוב:</strong> הקבצים המצורפים הם תוכן משתמש בתוך המאגר (לא בינאריים של מסד נתונים), ולכן עקרון "מאגר טקסט בלבד" הופך ל"אין בינאריים של <em>האפליקציה</em>"; מומלץ לתעד שימוש ב-Git LFS לקבצים גדולים. ה-auto-commit מוסיף ל-stage רק את קובץ התגובה ואת הקבצים המצורפים שלה.</li>
+      <li><strong>אינדקס:</strong> טבלה <code>comments(project_path, task_id, id, author, created_at, edited_at, body)</code>, מפתח ראשי מורכב <code>(project_path, task_id, id)</code>, אינדקס על <code>(project_path, task_id, created_at DESC)</code>; שורות <code>attachments</code> אופציונליות (או נגזרות מקובץ התגובה). הידרציה, הידרציה דיפרנציאלית וטיפול במחיקות מורחבים לנתיבי התגובות; גוף התגובה גם ניתן לחיפוש. כרטיס המשימה מציג מספר תגובות.</li>
+      <li><strong>תצוגה:</strong> גוף התגובה הוא טקסט רגיל עם escape, קישורים אוטומטיים ושבירות שורה (או Markdown מנוקה – ההחלטה נדחתה); <code>dir="auto"</code> לתערובת עברית/אנגלית. הדבקת תמונה וגרירת קבצים לתיבת התגובה (JavaScript רגיל, <code>multipart/form-data</code>, אסימון CSRF).</li>
+    </ul>
+  </li>
+
+  <li><strong>קובץ משימה:</strong> <code>.todo/tasks/&lt;ID&gt;.json5</code> – שדות: <code>id, title, status, assignee, description, tags[], blocked_by[]</code> (ואופציונלית <code>lang</code>). קריאה עם <code>json5</code>; כתיבה דטרמיניסטית (מפתחות ממוינים, הזחה של 2 רווחים, שורה חדשה בסוף, <code>ensure_ascii=False</code> כדי שהעברית תישאר קריאה וה-diff נקי). כתיבה אטומית (קובץ זמני + <code>os.replace</code>). ה-ID מאומת מול <code>^[A-Za-z0-9_-]+$</code> למניעת path traversal.</li>
+
+  <li><strong>אתחול והידרציה:</strong> <code>git rev-parse HEAD</code> ← השוואה ל-<code>projects.last_scanned_commit</code>.
+    <ul>
+      <li>התאמה (hit) ← מדלגים על הסריקה. שורה חסרה ← הידרציה מלאה. הבדל ← <code>git diff --name-status &lt;old&gt; HEAD -- .todo/tasks</code> וטיפול ב-A/M/D/R (מחיקה מסירה שורות; שינוי שם = מחיקה + הוספה). אם <code>&lt;old&gt;</code> אינו נגיש (rebase/gc) או שה-diff נכשל – חוזרים להידרציה מלאה.</li>
+      <li><strong>פער במסמך שיש לסגור:</strong> ‏<code>HEAD</code> לבדו לא מזהה שינויים <em>שלא נעשה להם commit</em> בקובצי <code>.json5</code> (עריכה ידנית, או <code>--auto-commit</code> כבוי). הפתרון: לשלב גם את <code>git status --porcelain -- .todo/tasks</code> במפתח המטמון (‏HEAD + hash של רשימת הקבצים המלוכלכים/mtimes); אם יש שינויים – מנתחים מחדש רק את הקבצים האלה. יעד שאינו מאגר git ← שגיאה ברורה.</li>
+    </ul>
+  </li>
+
+  <li><strong>שינוי (mutation):</strong> אימות ← בדיקת גרף ← כתיבת קובץ ← עדכון SQLite בטרנזקציה אחת ← אם <code>--auto-commit</code>: ‏<code>git add &lt;file&gt;</code> + ‏<code>git commit -m "task: update &lt;ID&gt;"</code> (רק הנתיב הזה) ← שמירת ה-HEAD החדש ב-<code>last_scanned_commit</code>. אם כתיבת הקובץ נכשלת – אין שינוי במסד; אם ה-commit נכשל – מדווחים אך שומרים על עקביות קובץ+מסד (מפתח המטמון כולל מצב "מלוכלך", ולכן המערכת מתרפאת מעצמה).</li>
+</ul>
+
+<h2>כפתורי סנכרון: עדכון ושמירת עבודה</h2>
+<ul>
+  <li><strong>עדכון (Update)</strong> – ‏<code>POST /sync/pull</code>: מריץ <code>git pull --ff-only</code> במאגר היעד, ואז הידרציה דיפרנציאלית קיימת מה-HEAD הישן לחדש (A/M/D/R למשימות, תגובות ותגיות), כך שרק קבצים ששונו מנותחים מחדש. מוצג סיכום ("3 משימות עודכנו, 1 נוספה, 2 תגובות"). כללים:
+    <ul>
+      <li>נדרש upstream; בלי remote/upstream הכפתור מושבת עם הסבר.</li>
+      <li>אם הענף התפצל (ff-only נכשל) – מציעים "עדכון עם rebase": ‏<code>git pull --rebase --autostash</code>. בקונפליקט מריצים <code>git rebase --abort</code> (ומשחזרים את ה-stash) ומדווחים אילו קבצים מתנגשים כדי שהמשתמש יפתור ב-git. האפליקציה אף פעם לא משאירה את המאגר באמצע rebase.</li>
+      <li>שינויים ב-<code>.todo/</code> שלא נעשה להם commit מטופלים ע"י <code>--autostash</code>; מפתח המטמון (HEAD + רשימת קבצים מלוכלכים) מחושב מחדש אחר כך.</li>
+    </ul>
+  </li>
+  <li><strong>שמירת עבודה (Save work)</strong> – ‏<code>POST /sync/save</code>: מוסיף ל-stage רק את <code>.todo/</code> (‏<code>git add -- .todo</code>), מבצע commit עם הודעה הניתנת לעריכה (ברירת מחדל <code>tasks: update N task(s)</code>), ואז <code>git push</code>. כללים:
+    <ul>
+      <li>אף פעם לא מוסיף ל-stage קבצים מחוץ ל-<code>.todo/</code>. אם אין מה לעשות commit – מדלגים עליו ומבצעים push לקומיטים שטרם נדחפו.</li>
+      <li>דחיית push (השרת מקדים אותנו) ← בלי force push; מבקשים מהמשתמש להריץ קודם "עדכון". אין upstream ← מציעים <code>git push -u origin HEAD</code>.</li>
+      <li>אחרי ה-commit שומרים את ה-HEAD החדש ב-<code>last_scanned_commit</code>. כש-<code>--auto-commit</code> פעיל, "שמירת עבודה" היא בפועל רק ה-push.</li>
+    </ul>
+  </li>
+  <li><strong>תשתית משותפת:</strong> כל קריאות git עוברות דרך פונקציית עזר אחת עם <code>GIT_TERMINAL_PROMPT=0</code> ו-timeout (בלי תקיעה על בקשת סיסמה), תחת נעילה לכל פרויקט כדי שלא יתערבבו עם שינויים אחרים; ה-stderr מוצג למשתמש בדיאלוג שגיאה מתורגם. ‏POST + CSRF בלבד.</li>
+  <li><strong>סטטוס</strong> – ‏<code>GET /api/sync-status</code>: ענף, upstream, ahead/behind (מהרפרנסים המקומיים, בלי רשת), ומספר שינויים ב-<code>.todo/</code> שלא נעשה להם commit. מזין תג על הכפתור "שמירת עבודה" ("5 שינויים") וסימון "↑2 ↓1" ליד שם הענף; "עדכון" מריץ גם <code>git fetch</code> כך שספירת ה-behind מתרעננת בלחיצה.</li>
+  <li>התוויות מתורגמות דרך Babel (Update / עדכן, Save work / שמור עבודה), מוצג ספינר בזמן הפעולה, והכפתורים מושבתים בזמן ריצה.</li>
+</ul>
+
+<h2>גרף תלויות (<code>graph.py</code>)</h2>
+<p>בונים רשימת שכנויות מטבלת <code>dependencies</code> של הפרויקט, מוסיפים את הקשת המוצעת, ומריצים DFS איטרטיבי עם צביעה לבן/אפור/שחור (ללא מגבלת רקורסיה); מחזירים את נתיב המעגל. הנתיבים מחזירים HTTP 400 עם הודעה מתורגמת ונתיב המעגל. בנוסף נדחות תלות עצמית ומזהים לא קיימים.</p>
+
+<h2>עברית + אנגלית (<code>i18n.py</code>, תבניות, CSS)</h2>
+<ul>
+  <li><strong>מחרוזות ממשק:</strong> Flask-Babel; כל התבניות משתמשות ב-<code>_()</code>; קטלוגי <code>.po</code> ל-<code>en</code> ול-<code>he</code>; הפקודות <code>pybabel extract/init/compile</code> מתועדות. צורות רבים מטופלות לכל קטלוג (בעברית יש כללי ריבוי נפרדים).</li>
+  <li><strong>סדר קביעת השפה:</strong> ‏<code>?lang=</code> ← עוגיית <code>lang</code> (נקבעת ע"י המתג בכותרת) ← <code>--lang</code> משורת הפקודה ← ההתאמה הטובה ביותר מ-<code>Accept-Language</code> ← <code>en</code>.</li>
+  <li><strong>כיוון:</strong> ‏<code>&lt;html lang="{{locale}}" dir="{{'rtl' if locale=='he' else 'ltr'}}"&gt;</code>. ה-CSS כתוב עם <strong>תכונות לוגיות</strong> (<code>margin-inline-start</code>, <code>padding-inline</code>, <code>text-align: start</code>, <code>inset-inline-*</code>) כך שגיליון סגנונות אחד משרת את שני הכיוונים; סדר עמודות הקנבן, אפורדנסים של גרירה ואייקונים בעלי כיווניות (חיצים וכו') מתהפכים דרך <code>[dir=rtl]</code>.</li>
+  <li><strong>תוכן:</strong> כותרת ותיאור משימה מוצגים באלמנטים עם <code>dir="auto"</code> (או לפי <code>lang</code> של המשימה אם הוגדר), כך שמשימה בעברית בתוך ממשק באנגלית (ולהפך) תוצג נכון; גם שדות הקלט עם <code>dir="auto"</code>; מזהים, hash ונתיבים עטופים ב-<code>&lt;bdi&gt;</code>/<code>dir="ltr"</code>. גופנים התומכים בעברית ברשימת הגופנים.</li>
+  <li><strong>טיפול בנתונים:</strong> ‏UTF-8 בכל מקום (קבצים, SQLite, HTTP). ערכי הסטטוס נשארים מפתחות אנגליים יציבים בקבצים (<code>todo|in_progress|done|blocked</code>) ו<em>מתורגמים רק בזמן התצוגה</em>, כך שהמאגרים נשארים ניטרליים לשפה. החיפוש מודע-יוניקוד, עם case-folding ונרמול NFC (ניקוד וגרשיים בעברית מטופלים ע"י נרמול גם באינדקס וגם בשאילתה).</li>
+  <li><strong>תאריכים ומספרים:</strong> מעוצבים ע"י Babel לפי שפת הממשק.</li>
+</ul>
+
+<h2>ממשק ונתיבים (<code>app.py</code>)</h2>
+<p><code>/</code> – לוח קנבן לפי סטטוס (סינון: אחראי, טקסט, <strong>תגיות</strong>); <code>/list</code>; <code>/task/&lt;id&gt;</code> – צפייה/עריכה; <code>POST /task</code> – יצירה; <code>POST /task/&lt;id&gt;</code> – עדכון; <code>POST /task/&lt;id&gt;/status</code> – גרירה; <code>POST /lang</code> – קביעת עוגיה; <code>GET /api/graph</code>; <code>GET /api/tags</code> – כל התגיות עם ספירה (להשלמה אוטומטית ולצ'יפים); <code>POST /task/&lt;id&gt;/comment</code> – יצירה (multipart); <code>POST /task/&lt;id&gt;/comment/&lt;cid&gt;</code> – עריכה; <code>POST /task/&lt;id&gt;/comment/&lt;cid&gt;/delete</code>; <code>GET /task/&lt;id&gt;/attachment/&lt;cid&gt;/&lt;name&gt;</code>. בעמוד המשימה תיבת כתיבת תגובה מעל שרשור שהחדשות בו למעלה.</p>
+<ul>
+  <li><strong>ממשק תגיות וסינון:</strong> צ'יפים של תגיות על הכרטיסים; שדה תגיות עם השלמה אוטומטית (‏Enter/פסיק להוספה, Backspace להסרה) בטופס המשימה; סרגל סינון של צ'יפים לחיצים בלוח וברשימה. מצב הסינון נשמר ב-URL (<code>?tag=a&amp;tag=b&amp;match=any|all</code>, ברירת מחדל <code>all</code>/AND; מתג ל-"any") כך שאפשר לשתף ולשמור סימניה; השאילתה משתמשת ב-join על <code>tag_key</code> עם <code>GROUP BY ... HAVING COUNT(DISTINCT tag_key)=N</code> עבור AND. משתלב עם סינוני האחראי והטקסט. הצ'יפים עם <code>dir="auto"</code> כך שתגיות בעברית מוצגות נכון; תוויות הממשק של התגיות מתורגמות.</li>
+  <li>JavaScript קטן לגרירה ולמתג השפה. הפעלה: <code>python src/app.py --target PATH [--lang he|en] [--port N] [--auto-commit]</code>, מוגש ע"י <code>waitress.serve</code> כשהוא קשור ל-127.0.0.1 כברירת מחדל (כלי מקומי בלבד; בנוסף אסימון CSRF על כל ה-POST).</li>
+</ul>
+
+<h2>סדר בנייה</h2>
+<p class="note"><strong>פעולה ראשונה אחרי האישור:</strong> יצירת מסמכים בלבד (ללא קוד אפליקציה): ‏<code>PLAN.md</code>, ‏<code>plan_he.html</code> (דף זה) ו-<code>README.md</code>. מעדכנים אותם ככל שהעיצוב משתנה.</p>
+<ol>
+  <li><strong>שלב 0 – uv:</strong> ‏<code>uv init</code> / <code>uv add flask waitress json5 flask-babel platformdirs</code>, ‏<code>uv add --dev pytest</code>; הרצה: <code>uv run gitflow-task --target PATH</code> או <code>uv run python src/app.py ...</code>; בדיקות: <code>uv run pytest</code>. גרסת Python: <code>requires-python = "&gt;=3.11"</code> ו-<code>.python-version</code> = 3.12. אופציונלי: <code>uvx --from . gitflow-task</code> / <code>uv tool install .</code> להתקנה גלובלית, בהתאם לרעיון "מנוע גלובלי".</li>
+  <li>שלד, ‏<code>engine.py</code> (כולל תגיות ותגובות): קבצים + SQLite + הידרציה מלאה, עם בדיקות.</li>
+  <li>פסילת מטמון לפי hash ומצב מלוכלך + הידרציה דיפרנציאלית, עם בדיקות (מאגרי git זמניים).</li>
+  <li>‏<code>graph.py</code> + בדיקות (מעגלים, לולאה עצמית, יהלום שהוא <em>לא</em> מעגל).</li>
+  <li>נתיבי Flask ותבניות (אנגלית בלבד בשלב זה), זרימת שינוי, auto-commit אופציונלי, כפתורי עדכון ושמירת עבודה ו-<code>/api/sync-status</code>.</li>
+  <li>‏i18n: חיבור Babel, חילוץ מחרוזות, קטלוג <code>he</code>, ‏CSS ל-RTL, ‏<code>dir=auto</code> לתוכן, מתג ודגל שורת פקודה.</li>
+  <li>ליטוש: דפי שגיאה, ‏README עם הוראות שימוש ופקודות <code>pybabel</code>.</li>
+</ol>
+
+<h2>אימות</h2>
+<ul>
+  <li><strong>תגיות</strong> (<code>uv run pytest</code>): נרמול וסילוק כפילויות, מעבר הלוך-חזור של תגית בעברית, סינון AND מול OR, עריכת תגית מעדכנת את <code>task_tags</code>, הידרציה דיפרנציאלית מסירה תגיות של משימות שנמחקו, ספירות ב-<code>/api/tags</code>.</li>
+  <li><strong>תגובות:</strong> סדר החדשות-למעלה; מחבר וחותמת זמן נקבעים בשרת; עריכה מעדכנת <code>edited_at</code> ונדחית למחבר אחר; העלאה והורדה של קובץ מצורף; ניקוי שם קובץ ודחיית path traversal; SVG מוגש כהורדה; קובץ גדול מדי נדחה; שתי תגובות במקביל יוצרות קבצים נפרדים; מחיקת תגובה דרך git (הידרציה דיפרנציאלית) מסירה את השורה; תגובה בעברית מוצגת בכיוון הנכון.</li>
+  <li><strong>סנכרון</strong> (בדיקות עם remote חשוף זמני ושני clones): עדכון מבצע fast-forward והאינדקס משקף משימות ותגובות שנוספו/שונו/נמחקו; ענף מפוצל ← הצעת rebase; קונפליקט ב-rebase ← ביטול, מאגר נקי, רשימת קבצים; שמירה מוסיפה ל-stage רק את <code>.todo/</code> (קובץ מחוץ אליו נשאר ללא stage); דחיית push ← שגיאה ידידותית ובלי force; בלי upstream ← "עדכון" מושבת ו"שמירה" מציעה <code>push -u</code>; ספירות התג ו-ahead/behind נכונות; שום פעולה לא נתקעת על בקשת סיסמה.</li>
+  <li>‏<code>uv sync</code> מ-checkout נקי עובד; ‏<code>uv run gitflow-task --help</code> רץ.</li>
+  <li><strong>pytest כללי:</strong> הידרציה (hit/miss/diff/מחיקה/שינוי שם); שינוי שלא נעשה לו commit מזוהה; מעגל ← 400; ID עם path traversal נדחה; כותרת בעברית עוברת קובץ ← SQLite ← HTML ללא שינוי; סדר קביעת השפה; תכונת <code>dir</code> לכל שפה.</li>
+  <li><strong>ידני:</strong> יוצרים מאגר git זמני עם <code>.todo/tasks/</code>, מריצים, מוודאים שהאתחול השני מדלג על הסריקה (שורת לוג "cache hit"), עורכים קובץ ידנית ודרך commit בסגנון <code>git pull</code> ומוודאים רענון. מחליפים he↔en: הפריסה מתהפכת, משימה בעברית עם ID באנגלית מוצגת נכון, גרירה עובדת ב-RTL. מוודאים ש-<code>git status</code> במאגר היעד מציג רק שינויים בקובצי <code>.json5</code> (וקבצים מצורפים של משתמש) – ללא בינאריים של האפליקציה.</li>
+</ul>
+
+<h2>נקודות פתוחות (נבחרו ברירות מחדל, קל לשנות)</h2>
+<p>טיפול בשינויים שלא נעשה להם commit כמתואר; קשירה ל-localhost בלבד; ארבעה סטטוסים קבועים (ניתן להגדרה בעתיד דרך <code>.todo/config.json5</code>).</p>
+
+</main>
+</body>
+</html>
