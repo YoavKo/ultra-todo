@@ -1,7 +1,7 @@
 # ultra-todo — Implementation Plan (Flask, local-first, he + en)
 
 ## Context
-Greenfield project in `/home/yoavko/Documents/projects/ultra-todo` (empty dir, Python 3.12, git 2.43). Build the self-hosted GitOps task manager from the design doc: JSON5 task files in `<repo>/.todo/tasks/`, a global SQLite index in the OS cache dir, HEAD-hash cache invalidation, DAG dependency validation, served by Flask + waitress. Added requirement: **full Hebrew + English support** — translated UI, RTL layout, correct Hebrew content handling, language chosen via CLI default plus in-UI toggle.
+Greenfield project in `ultra-todo/` (Python 3.12, git 2.43). Build the self-hosted GitOps task manager from the design doc: JSON5 task files in `<repo>/.todo/tasks/`, a global SQLite index in the OS cache dir, HEAD-hash cache invalidation, DAG dependency validation, served by Flask + waitress. Added requirement: **full Hebrew + English support** — translated UI, RTL layout, correct Hebrew content handling, language chosen via CLI default plus in-UI toggle.
 
 ## Layout
 ```
