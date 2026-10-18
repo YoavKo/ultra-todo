@@ -41,8 +41,8 @@ the path defaults to the current directory and extra flags are passed through:
 ```bash
 # ultra-todo: utd [path] [extra flags]  (path defaults to .)
 utd() {
-    local target="${1:-.}"
-    [ $# -gt 0 ] && shift
+    local target=.
+    if [ $# -gt 0 ] && [[ "$1" != -* ]]; then target="$1"; shift; fi
     target="$(realpath -- "$target")" || return 1
     uv run --project "$HOME/path/to/ultra-todo" ultra-todo --target "$target" "$@"
 }
@@ -50,6 +50,7 @@ utd() {
 
 ```bash
 utd                          # current directory
+utd --lang he                # flags only: still the current directory
 utd ~/work/some-repo --lang he --port 9000
 ```
 
