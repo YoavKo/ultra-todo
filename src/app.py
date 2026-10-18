@@ -421,7 +421,7 @@ def cmd_ls(argv: list[str]) -> None:
         counts = repos.task_counts(r)
         tasks = f"[{counts[0]} open, {counts[1]} done]" if counts else "[-]"
         note = "" if r["exists"] else "  (missing)"
-        rows.append((str(i), when, r["name"], tasks, r["path"] + note))
+        rows.append((str(i), when, tasks, r["name"], r["path"] + note))
     widths = [max(len(row[c]) for row in rows) for c in range(4)]
     for row in rows:
         print(f"{row[0]:>{widths[0]}}  {row[1]:<{widths[1]}}  {row[2]:<{widths[2]}}  "
