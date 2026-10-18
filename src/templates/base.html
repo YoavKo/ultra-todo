@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="{{ locale }}" dir="{{ dir }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>{% block title %}{{ project_name }}{% endblock %} · ultra-todo</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="{{ url_for('index') }}">ultra-todo</a>
+  <span class="project" title="{{ project_path }}"><bdi>{{ project_name }}</bdi></span>
+  <nav class="views">
+    <a href="{{ url_for('index') }}{% if request.query_string %}?{{ request.query_string.decode() }}{% endif %}" {% if view == 'board' %}aria-current="page"{% endif %}>{{ _('Board') }}</a>
+    <a href="{{ url_for('list_view') }}{% if request.query_string %}?{{ request.query_string.decode() }}{% endif %}" {% if view == 'list' %}aria-current="page"{% endif %}>{{ _('List') }}</a>
+  </nav>
+  <a class="btn primary" href="{{ url_for('new_task') }}">+ {{ _('New task') }}</a>
+  <span class="spacer"></span>
+  <span class="sync-status" id="sync-status" title="{{ _('Branch') }}"></span>
+  <button class="btn" id="btn-update" type="button" title="{{ _('Pull from the remote and refresh tasks') }}">⟳ {{ _('Update') }}</button>
+  <button class="btn" id="btn-save" type="button" title="{{ _('Commit task changes and push') }}">
+    ⇪ {{ _('Save work') }} <span class="badge" id="changes-badge" hidden></span>
+  </button>
+  <form method="post" action="{{ url_for('set_lang') }}" class="lang">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for l in SUPPORTED %}
+      <button name="lang" value="{{ l }}" class="lang-btn" {% if l == locale %}aria-pressed="true"{% endif %}
+              lang="{{ l }}">{{ {'en': 'EN', 'he': 'עב'}[l] }}</button>
+    {% endfor %}
+  </form>
+</header>
+
+<main class="container">
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, m in msgs %}<div class="flash {{ cat }}" dir="auto">{{ m }}</div>{% endfor %}
+  {% endwith %}
+  {% for w in warnings or [] %}<div class="flash warning"><bdi>{{ w }}</bdi></div>{% endfor %}
+  {% block content %}{% endblock %}
+</main>
+
+<dialog id="save-dialog">
+  <form method="dialog" class="stack">
+    <h3>{{ _('Save work') }}</h3>
+    <p class="muted" id="save-summary"></p>
+    <label>{{ _('Commit message') }}
+      <input type="text" id="save-message" dir="auto" placeholder="tasks: update N task(s)">
+    </label>
+    <div class="row end">
+      <button class="btn" value="cancel">{{ _('Cancel') }}</button>
+      <button class="btn primary" value="ok" id="save-confirm">{{ _('Commit & push') }}</button>
+    </div>
+  </form>
+</dialog>
+<div id="toasts" aria-live="polite"></div>
+
+<script>
+  window.I18N = {
+    changes: {{ _('%(n)s changes', n='{n}')|tojson }},
+    noChanges: {{ _('No uncommitted changes; unpushed commits will be pushed.')|tojson }},
+    rebase: {{ _('Update with rebase')|tojson }},
+    publish: {{ _('Publish branch')|tojson }},
+    noUpstream: {{ _('no upstream')|tojson }},
+    working: {{ _('Working…')|tojson }},
+    confirmDelete: {{ _('Delete this? This cannot be undone.')|tojson }},
+    error: {{ _('Error')|tojson }}
+  };
+</script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

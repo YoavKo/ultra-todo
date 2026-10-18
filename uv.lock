@@ -71,35 +71,6 @@ wheels = [
 ]
 
 [[package]]
-name = "gitflow-task"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "flask" },
-    { name = "flask-babel" },
-    { name = "json5" },
-    { name = "platformdirs" },
-    { name = "waitress" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "flask", specifier = ">=3.1.3" },
-    { name = "flask-babel", specifier = ">=4.0.0" },
-    { name = "json5", specifier = ">=0.17.3" },
-    { name = "platformdirs", specifier = ">=4.13.4" },
-    { name = "waitress", specifier = ">=3.0.2" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.1.1" }]
-
-[[package]]
 name = "iniconfig"
 version = "2.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -326,6 +297,35 @@ sdist = { url = "https://files.pythonhosted.org/packages/14/21/d83d6ef28c4c912c4
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4f/ef/c66110d46fb800dda0bf33164182dfadabe26a90e4476844d502a23dca8e/pytz-2026.5-py2.py3-none-any.whl", hash = "sha256:e658af3757f9e26a9d25dd2aff38335acd92bc9104f890a894b2c1ba28311b03", size = 506342 },
 ]
+
+[[package]]
+name = "ultra-todo"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "flask" },
+    { name = "flask-babel" },
+    { name = "json5" },
+    { name = "platformdirs" },
+    { name = "waitress" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "flask", specifier = ">=3.1.3" },
+    { name = "flask-babel", specifier = ">=4.0.0" },
+    { name = "json5", specifier = ">=0.17.3" },
+    { name = "platformdirs", specifier = ">=4.13.4" },
+    { name = "waitress", specifier = ">=3.0.2" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=9.1.1" }]
 
 [[package]]
 name = "waitress"

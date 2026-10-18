@@ -1,4 +1,4 @@
-# GitFlow-Task — Implementation Plan (Flask, local-first, he + en)
+# ultra-todo — Implementation Plan (Flask, local-first, he + en)
 
 ## Context
 Greenfield project in `/home/yoavko/Documents/projects/ultra-todo` (empty dir, Python 3.12, git 2.43). Build the self-hosted GitOps task manager from the design doc: JSON5 task files in `<repo>/.todo/tasks/`, a global SQLite index in the OS cache dir, HEAD-hash cache invalidation, DAG dependency validation, served by Flask + waitress. Added requirement: **full Hebrew + English support** — translated UI, RTL layout, correct Hebrew content handling, language chosen via CLI default plus in-UI toggle.
@@ -6,7 +6,7 @@ Greenfield project in `/home/yoavko/Documents/projects/ultra-todo` (empty dir, P
 ## Layout
 ```
 ultra-todo/
-├── pyproject.toml            # uv-managed: deps, `[project.scripts] gitflow-task = "app:main"`, dev group (pytest)
+├── pyproject.toml            # uv-managed: deps, `[project.scripts] ultra-todo = "app:main"`, dev group (pytest)
 ├── uv.lock                   # committed lockfile
 ├── requirements.txt          # generated via `uv export` for non-uv users (flask, waitress, json5, flask-babel, platformdirs)
 ├── babel.cfg
@@ -23,7 +23,7 @@ ultra-todo/
 (Design doc puts `templates/` beside `src/`; keeping it inside `src/` so Flask finds it by default — trivial to move.)
 
 ## Core engine (`engine.py`)
-- **Cache path**: `platformdirs.user_cache_dir("gitflow-task")/app_global_index.sqlite3`. Tables `projects`, `tasks`, `dependencies` exactly as in the doc. Add `PRAGMA journal_mode=WAL`, `foreign_keys=ON`, and one connection per request/thread (waitress is multi-threaded); writes serialized with a lock.
+- **Cache path**: `platformdirs.user_cache_dir("ultra-todo")/app_global_index.sqlite3`. Tables `projects`, `tasks`, `dependencies` exactly as in the doc. Add `PRAGMA journal_mode=WAL`, `foreign_keys=ON`, and one connection per request/thread (waitress is multi-threaded); writes serialized with a lock.
 - **Tags**: tasks get a `tags: []` list in the JSON5 file. Normalize on write (NFC, trim, collapse whitespace, case-fold for matching but preserve display casing of first use, dedupe, max length); Hebrew tags are fully supported. New SQLite table `task_tags(project_path, task_id, tag, tag_key)` with composite PK `(project_path, task_id, tag_key)` and an index on `(project_path, tag_key)`; `tag_key` is the casefolded/NFC form used for filtering. Hydration (full + differential) and mutations maintain it alongside `tasks`. Bump a `schema_version` (PRAGMA user_version) and rebuild the index on mismatch — the cache is disposable, so migration = drop + rehydrate.
 - **Comments (discussion thread)**: each task owns a directory `.todo/tasks/<ID>/` (created lazily). One file per comment — `.todo/tasks/<ID>/comments/<UTC-ts>-<shortid>.json5` with `{id, author, created_at, edited_at?, body, attachments:[{name, file, mime, size}]}` — so two people commenting concurrently never touch the same file (zero-conflict pillar; a single `comments[]` array in the task file would conflict). Scanner globs only top-level `.todo/tasks/*.json5` for tasks and `<ID>/comments/*.json5` for comments.
   - **Author/time**: server stamps `created_at` (UTC ISO-8601) and author from `git config user.name`/`user.email` (falls back to OS user; `--author` override). Client-supplied values ignored. Displayed in the viewer's locale/timezone (Babel).
@@ -70,7 +70,7 @@ Build adjacency from `dependencies` for the project, add the proposed edge(s), i
 ## Build order
 **First action after approval** (plan mode only allows editing this file): create docs only (no app code yet): `ultra-todo/PLAN.md` (this plan), `ultra-todo/plan_he.html` (full Hebrew translation of the whole plan, standalone RTL page with `lang="he" dir="rtl"`, Hebrew-capable font, code/paths kept LTR via `<bdi>`/`dir="ltr"`, works in light/dark, printable), and `ultra-todo/README.md` (overview, pillars, repo/cache layout, task + comment file formats, `uv` install/run, CLI flags, he/en usage, `pybabel` workflow, Git LFS note for attachments, dev/test commands). Keep both updated as the design changes.
 
-0. `uv init` / `uv add flask waitress json5 flask-babel platformdirs`, `uv add --dev pytest`; run with `uv run gitflow-task --target PATH` or `uv run python src/app.py ...`; tests via `uv run pytest`. Python pinned via `requires-python = ">=3.11"` (`.python-version` = 3.12). Optional: `uvx --from . gitflow-task` / `uv tool install .` for a global install, matching the "global engine" idea.
+0. `uv init` / `uv add flask waitress json5 flask-babel platformdirs`, `uv add --dev pytest`; run with `uv run ultra-todo --target PATH` or `uv run python src/app.py ...`; tests via `uv run pytest`. Python pinned via `requires-python = ">=3.11"` (`.python-version` = 3.12). Optional: `uvx --from . ultra-todo` / `uv tool install .` for a global install, matching the "global engine" idea.
 1. Skeleton, `engine.py` (incl. tags) (file I/O + SQLite + full hydration) with tests.
 2. Git hash/dirty-state invalidation + differential hydration with tests (temp git repos).
 3. `graph.py` + tests (cycles, self-loop, diamond that is *not* a cycle).
@@ -82,7 +82,7 @@ Build adjacency from `dependencies` for the project, add the proposed edge(s), i
 - Tags: `uv run pytest` cases — tag normalization/dedupe, Hebrew tag round-trip, AND vs OR filtering, tag edit updates `task_tags`, differential hydration removes tags of deleted tasks, `/api/tags` counts.
 - Comments: newest-first ordering; author/timestamp server-stamped; edit sets `edited_at` and rejects other authors; attachment upload/download round-trip; filename sanitization + path traversal rejected; SVG served as download; oversize rejected; two comments created concurrently produce distinct files; deleting a task's comment via git (differential hydration) removes the row; Hebrew comment renders with correct direction.
 - Sync (tests use a temp bare remote + two clones): Update fast-forwards and the index reflects added/changed/deleted tasks and comments; diverged branch → rebase offer; rebase conflict → aborted, repo clean, files listed; Save stages only `.todo/` (a file outside it stays unstaged); push rejected → friendly error, no force; no upstream → Update disabled, Save offers `push -u`; status badge counts and ahead/behind are correct; no operation hangs on a credential prompt.
-- `uv sync` from clean checkout works; `uv run gitflow-task --help` runs.
+- `uv sync` from clean checkout works; `uv run ultra-todo --help` runs.
 - `pytest`: hydration hit/miss/diff/delete/rename; uncommitted edit detected; cycle → 400; path-traversal ID rejected; Hebrew title round-trips through file → SQLite → HTML unchanged; locale resolution order; `dir` attribute per locale.
 - Manual: create a scratch git repo with `.todo/tasks/`, run the app, confirm second boot skips scanning (log line "cache hit"), edit a file by hand and by `git pull`-style commit and confirm refresh. Switch he↔en: layout mirrors, Hebrew task with an English ID displays correctly, drag-drop works in RTL. Confirm `git status` of the target repo shows only `.json5` changes (no binaries).
 

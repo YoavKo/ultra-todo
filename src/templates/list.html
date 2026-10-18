@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% from "_macros.html" import filter_bar, tag_chip %}
+{% block title %}{{ _('List') }}{% endblock %}
+{% block content %}
+{{ filter_bar(f, all_tags, assignees, 'list_view', total) }}
+<div class="table-wrap">
+<table class="tasks">
+  <thead><tr>
+    <th>{{ _('ID') }}</th><th>{{ _('Title') }}</th><th>{{ _('Status') }}</th>
+    <th>{{ _('Assignee') }}</th><th>{{ _('Tags') }}</th><th>{{ _('Blocked by') }}</th><th>💬</th>
+  </tr></thead>
+  <tbody>
+  {% for t in tasks %}
+    <tr>
+      <td><bdi dir="ltr">{{ t.id }}</bdi></td>
+      <td><a href="{{ url_for('task_view', task_id=t.id) }}" dir="auto">{{ t.title }}</a></td>
+      <td><span class="status s-{{ t.status }}">{{ status_label(t.status) }}</span></td>
+      <td dir="auto">{{ t.assignee }}</td>
+      <td>{% for tag in t.tags %}{{ tag_chip(tag, f, 'list_view') }}{% endfor %}</td>
+      <td>{% for b in t.blocked_by %}<a href="{{ url_for('task_view', task_id=b) }}"><bdi dir="ltr">{{ b }}</bdi></a> {% endfor %}</td>
+      <td>{{ t.comment_count or '' }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">{{ _('No tasks match.') }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

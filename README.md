@@ -1,4 +1,4 @@
-# GitFlow-Task
+# ultra-todo
 
 A self-hosted, local-first task manager written in Python (Flask). It manages **any local Git repository** that contains a `.todo/tasks/` directory of plain-text JSON5 files. Hebrew and English are both supported (UI, RTL layout, and content).
 
@@ -7,7 +7,7 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 ## Core ideas
 
 - **Zero-conflict GitOps** – the managed repo holds only text (`.json5`) written by the app. No database ever touches your project.
-- **Smart persistent index** – a single SQLite file in the global cache dir (`~/.cache/gitflow-task/app_global_index.sqlite3`, or the OS equivalent) serves fast lookups for all projects.
+- **Smart persistent index** – a single SQLite file in the global cache dir (`~/.cache/ultra-todo/app_global_index.sqlite3`, or the OS equivalent) serves fast lookups for all projects.
 - **Git hash invalidation** – on boot the app compares `git rev-parse HEAD` (plus uncommitted changes under `.todo/`) with the cached value. Unchanged → no disk scan; changed → only the modified files are re-parsed.
 - **DAG dependencies** – "blocked by" links are checked with DFS cycle detection; cycles return HTTP 400.
 
@@ -24,11 +24,11 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 
 ```bash
 uv sync
-uv run gitflow-task --target /path/to/your/repo            # http://127.0.0.1:8080
-uv run gitflow-task --target /path/to/repo --lang he --port 9000 --auto-commit
+uv run ultra-todo --target /path/to/your/repo            # http://127.0.0.1:8080
+uv run ultra-todo --target /path/to/repo --lang he --port 9000 --auto-commit
 ```
 
-Global install: `uv tool install .` then `gitflow-task --target ...`.
+Global install: `uv tool install .` then `ultra-todo --target ...`.
 Without uv: `pip install -r requirements.txt && python src/app.py --target ...`.
 
 ### CLI flags

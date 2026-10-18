@@ -20,7 +20,7 @@ from typing import Any, Iterable
 import json5
 import platformdirs
 
-log = logging.getLogger("gitflow-task")
+log = logging.getLogger("ultra-todo")
 
 SCHEMA_VERSION = 2
 STATUSES = ("todo", "in_progress", "done", "blocked")
@@ -236,7 +236,7 @@ CREATE INDEX IF NOT EXISTS idx_comments_task
 
 
 def default_db_path() -> Path:
-    return Path(platformdirs.user_cache_dir("gitflow-task")) / "app_global_index.sqlite3"
+    return Path(platformdirs.user_cache_dir("ultra-todo")) / "app_global_index.sqlite3"
 
 
 class Summary(dict):

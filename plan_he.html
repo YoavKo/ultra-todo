@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>תוכנית GitFlow-Task</title>
+<title>תוכנית ultra-todo</title>
 <style>
   :root { --bg:#fff; --fg:#1d2330; --muted:#5b6475; --line:#d9dde6; --code:#f3f5f9; --accent:#2457d6; }
   @media (prefers-color-scheme: dark) {
@@ -29,7 +29,7 @@
 <body>
 <main>
 
-<h1>GitFlow-Task – תוכנית מימוש</h1>
+<h1>ultra-todo – תוכנית מימוש</h1>
 <p class="sub">מנהל משימות מקומי (Flask), בגישת local-first ו-GitOps, עם תמיכה מלאה בעברית ובאנגלית</p>
 
 <h2>הקשר</h2>
@@ -38,7 +38,7 @@
 
 <h2>מבנה הפרויקט</h2>
 <pre><code>ultra-todo/
-├── pyproject.toml       # מנוהל ב-uv: תלויות, סקריפט gitflow-task, קבוצת dev (pytest)
+├── pyproject.toml       # מנוהל ב-uv: תלויות, סקריפט ultra-todo, קבוצת dev (pytest)
 ├── uv.lock              # קובץ נעילה (נכנס ל-git)
 ├── requirements.txt     # נוצר ע"י uv export למי שלא משתמש ב-uv
 ├── babel.cfg
@@ -55,7 +55,7 @@
 
 <h2>מנוע הליבה (<code>engine.py</code>)</h2>
 <ul>
-  <li><strong>נתיב המטמון:</strong> <code>platformdirs.user_cache_dir("gitflow-task")/app_global_index.sqlite3</code>. הטבלאות <code>projects</code>, <code>tasks</code>, <code>dependencies</code> בדיוק כפי שבמסמך. מוסיפים <code>PRAGMA journal_mode=WAL</code>, <code>foreign_keys=ON</code>, חיבור נפרד לכל בקשה/תהליכון (waitress הוא רב-תהליכוני), וכתיבות מסודרות באמצעות נעילה.</li>
+  <li><strong>נתיב המטמון:</strong> <code>platformdirs.user_cache_dir("ultra-todo")/app_global_index.sqlite3</code>. הטבלאות <code>projects</code>, <code>tasks</code>, <code>dependencies</code> בדיוק כפי שבמסמך. מוסיפים <code>PRAGMA journal_mode=WAL</code>, <code>foreign_keys=ON</code>, חיבור נפרד לכל בקשה/תהליכון (waitress הוא רב-תהליכוני), וכתיבות מסודרות באמצעות נעילה.</li>
 
   <li><strong>תגיות:</strong> לכל משימה יש רשימה <code>tags: []</code> בקובץ ה-JSON5. נרמול בכתיבה (NFC, חיתוך רווחים, צמצום רווחים כפולים, case-fold להתאמה תוך שמירת הכתיב המקורי להצגה, הסרת כפילויות, אורך מקסימלי). תגיות בעברית נתמכות במלואן. טבלה חדשה <code>task_tags(project_path, task_id, tag, tag_key)</code> עם מפתח ראשי מורכב <code>(project_path, task_id, tag_key)</code> ואינדקס על <code>(project_path, tag_key)</code>; <code>tag_key</code> הוא הצורה המנורמלת (NFC + casefold) המשמשת לסינון. ההידרציה (מלאה ודיפרנציאלית) והעדכונים מתחזקים אותה לצד <code>tasks</code>. מעלים <code>schema_version</code> (‏<code>PRAGMA user_version</code>) ובונים את האינדקס מחדש כשיש אי-התאמה – המטמון חד-פעמי, לכן "מיגרציה" = מחיקה והידרציה מחדש.</li>
 
@@ -127,7 +127,7 @@
 <h2>סדר בנייה</h2>
 <p class="note"><strong>פעולה ראשונה אחרי האישור:</strong> יצירת מסמכים בלבד (ללא קוד אפליקציה): ‏<code>PLAN.md</code>, ‏<code>plan_he.html</code> (דף זה) ו-<code>README.md</code>. מעדכנים אותם ככל שהעיצוב משתנה.</p>
 <ol>
-  <li><strong>שלב 0 – uv:</strong> ‏<code>uv init</code> / <code>uv add flask waitress json5 flask-babel platformdirs</code>, ‏<code>uv add --dev pytest</code>; הרצה: <code>uv run gitflow-task --target PATH</code> או <code>uv run python src/app.py ...</code>; בדיקות: <code>uv run pytest</code>. גרסת Python: <code>requires-python = "&gt;=3.11"</code> ו-<code>.python-version</code> = 3.12. אופציונלי: <code>uvx --from . gitflow-task</code> / <code>uv tool install .</code> להתקנה גלובלית, בהתאם לרעיון "מנוע גלובלי".</li>
+  <li><strong>שלב 0 – uv:</strong> ‏<code>uv init</code> / <code>uv add flask waitress json5 flask-babel platformdirs</code>, ‏<code>uv add --dev pytest</code>; הרצה: <code>uv run ultra-todo --target PATH</code> או <code>uv run python src/app.py ...</code>; בדיקות: <code>uv run pytest</code>. גרסת Python: <code>requires-python = "&gt;=3.11"</code> ו-<code>.python-version</code> = 3.12. אופציונלי: <code>uvx --from . ultra-todo</code> / <code>uv tool install .</code> להתקנה גלובלית, בהתאם לרעיון "מנוע גלובלי".</li>
   <li>שלד, ‏<code>engine.py</code> (כולל תגיות ותגובות): קבצים + SQLite + הידרציה מלאה, עם בדיקות.</li>
   <li>פסילת מטמון לפי hash ומצב מלוכלך + הידרציה דיפרנציאלית, עם בדיקות (מאגרי git זמניים).</li>
   <li>‏<code>graph.py</code> + בדיקות (מעגלים, לולאה עצמית, יהלום שהוא <em>לא</em> מעגל).</li>
@@ -141,7 +141,7 @@
   <li><strong>תגיות</strong> (<code>uv run pytest</code>): נרמול וסילוק כפילויות, מעבר הלוך-חזור של תגית בעברית, סינון AND מול OR, עריכת תגית מעדכנת את <code>task_tags</code>, הידרציה דיפרנציאלית מסירה תגיות של משימות שנמחקו, ספירות ב-<code>/api/tags</code>.</li>
   <li><strong>תגובות:</strong> סדר החדשות-למעלה; מחבר וחותמת זמן נקבעים בשרת; עריכה מעדכנת <code>edited_at</code> ונדחית למחבר אחר; העלאה והורדה של קובץ מצורף; ניקוי שם קובץ ודחיית path traversal; SVG מוגש כהורדה; קובץ גדול מדי נדחה; שתי תגובות במקביל יוצרות קבצים נפרדים; מחיקת תגובה דרך git (הידרציה דיפרנציאלית) מסירה את השורה; תגובה בעברית מוצגת בכיוון הנכון.</li>
   <li><strong>סנכרון</strong> (בדיקות עם remote חשוף זמני ושני clones): עדכון מבצע fast-forward והאינדקס משקף משימות ותגובות שנוספו/שונו/נמחקו; ענף מפוצל ← הצעת rebase; קונפליקט ב-rebase ← ביטול, מאגר נקי, רשימת קבצים; שמירה מוסיפה ל-stage רק את <code>.todo/</code> (קובץ מחוץ אליו נשאר ללא stage); דחיית push ← שגיאה ידידותית ובלי force; בלי upstream ← "עדכון" מושבת ו"שמירה" מציעה <code>push -u</code>; ספירות התג ו-ahead/behind נכונות; שום פעולה לא נתקעת על בקשת סיסמה.</li>
-  <li>‏<code>uv sync</code> מ-checkout נקי עובד; ‏<code>uv run gitflow-task --help</code> רץ.</li>
+  <li>‏<code>uv sync</code> מ-checkout נקי עובד; ‏<code>uv run ultra-todo --help</code> רץ.</li>
   <li><strong>pytest כללי:</strong> הידרציה (hit/miss/diff/מחיקה/שינוי שם); שינוי שלא נעשה לו commit מזוהה; מעגל ← 400; ID עם path traversal נדחה; כותרת בעברית עוברת קובץ ← SQLite ← HTML ללא שינוי; סדר קביעת השפה; תכונת <code>dir</code> לכל שפה.</li>
   <li><strong>ידני:</strong> יוצרים מאגר git זמני עם <code>.todo/tasks/</code>, מריצים, מוודאים שהאתחול השני מדלג על הסריקה (שורת לוג "cache hit"), עורכים קובץ ידנית ודרך commit בסגנון <code>git pull</code> ומוודאים רענון. מחליפים he↔en: הפריסה מתהפכת, משימה בעברית עם ID באנגלית מוצגת נכון, גרירה עובדת ב-RTL. מוודאים ש-<code>git status</code> במאגר היעד מציג רק שינויים בקובצי <code>.json5</code> (וקבצים מצורפים של משתמש) – ללא בינאריים של האפליקציה.</li>
 </ul>

@@ -1,0 +1,31 @@
+{% macro tag_chip(tag, f=None, view='index') -%}
+  {%- if f is not none -%}
+    {%- set active = tag|lower in f.tags|map('lower')|list -%}
+    {%- set tags = (f.tags|reject('equalto', tag)|list) if active else (f.tags + [tag]) -%}
+    <a class="chip{% if active %} active{% endif %}" dir="auto"
+       href="{{ url_for(view, q=f.q or None, assignee=f.assignee or None, tag=tags, match=f.match if f.match == 'any' else None) }}">{{ tag }}</a>
+  {%- else -%}
+    <span class="chip" dir="auto">{{ tag }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro filter_bar(f, all_tags, assignees, view, total) %}
+<form class="filters" method="get" action="{{ url_for(view) }}">
+  <input type="search" name="q" value="{{ f.q }}" dir="auto" placeholder="{{ _('Search tasks and comments…') }}">
+  <select name="assignee" aria-label="{{ _('Assignee') }}">
+    <option value="">{{ _('All assignees') }}</option>
+    {% for a in assignees %}<option value="{{ a }}" {% if a == f.assignee %}selected{% endif %}>{{ a }}</option>{% endfor %}
+  </select>
+  {% for t in f.tags %}<input type="hidden" name="tag" value="{{ t }}">{% endfor %}
+  <label class="match"><input type="checkbox" name="match" value="any" {% if f.match == 'any' %}checked{% endif %}
+         onchange="this.form.submit()"> {{ _('Match any tag') }}</label>
+  <button class="btn">{{ _('Filter') }}</button>
+  {% if f.q or f.assignee or f.tags %}<a class="btn ghost" href="{{ url_for(view) }}">{{ _('Clear') }}</a>{% endif %}
+  <span class="muted">{{ ngettext('%(num)d task', '%(num)d tasks', total) }}</span>
+</form>
+{% if all_tags %}
+<div class="tagbar" aria-label="{{ _('Tags') }}">
+  {% for t in all_tags %}{{ tag_chip(t.tag, f, view) }}<small class="muted">{{ t.count }}</small>{% endfor %}
+</div>
+{% endif %}
+{% endmacro %}

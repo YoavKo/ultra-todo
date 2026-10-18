@@ -1,5 +1,5 @@
 [project]
-name = "gitflow-task"
+name = "ultra-todo"
 version = "0.1.0"
 description = "Local-first GitOps task manager (Flask) with Hebrew/English support"
 requires-python = ">=3.11"
@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-gitflow-task = "app:main"
+ultra-todo = "app:main"
 
 [build-system]
 requires = ["hatchling"]

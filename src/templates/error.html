@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Error') }}{% endblock %}
+{% block content %}
+<div class="panel">
+  <h2>{{ _('Error') }} {{ code }}</h2>
+  <p dir="auto">{{ message }}</p>
+  <p><a class="btn" href="javascript:history.back()">{{ _('Back') }}</a>
+     <a class="btn" href="{{ url_for('index') }}">{{ _('Board') }}</a></p>
+</div>
+{% endblock %}
