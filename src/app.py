@@ -155,8 +155,9 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
     def form_task(form) -> dict:
         data = {k: form.get(k, "") for k in ("title", "status", "assignee", "description")}
         data["tags"] = form.getlist("tags") + form.get("tags_text", "").split(",")
-        data["blocked_by"] = [b.strip() for b in form.getlist("blocked_by")
-                              for b in b.replace(",", " ").split() if b.strip()]
+        if "blocked_by_field" in form:  # only the new-task form edits blockers inline
+            data["blocked_by"] = [b.strip() for b in form.getlist("blocked_by")
+                                  for b in b.replace(",", " ").split() if b.strip()]
         if form.get("lang") in SUPPORTED:
             data["lang"] = form["lang"]
         elif "lang" in form:
@@ -222,9 +223,13 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
     def task_view(task_id):
         engine.refresh()
         task = engine.get_task(task_id)
+        others = [t for t in engine.list_tasks() if t["id"] != task_id]
+        by_id = {t["id"]: t for t in others}
         return render_template("task.html", task=task, is_new=False,
                                comments=engine.get_comments(task_id),
-                               candidates=[t for t in engine.list_tasks() if t["id"] != task_id],
+                               candidates=others, by_id=by_id,
+                               blockers=[(b, by_id.get(b)) for b in task["blocked_by"]],
+                               blocking=[(b, by_id.get(b)) for b in task["blocks"]],
                                all_tags=engine.all_tags(), me=engine.author_identity(),
                                inline_images=INLINE_IMAGES)
 
@@ -236,6 +241,27 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
         flash_commit(err)
         flash(_("Task saved."), "success")
         return redirect(url_for("task_view", task_id=task_id))
+
+    @app.post("/task/<task_id>/dependency")
+    def add_dependency(task_id):
+        other = request.form.get("other", "").strip()
+        if not other:
+            return redirect(url_for("task_view", task_id=task_id) + "#deps")
+        if request.form.get("kind") == "blocks":  # this task blocks `other`
+            err = engine.add_dependency(other, task_id)
+        else:
+            err = engine.add_dependency(task_id, other)
+        flash_commit(err)
+        flash(_("Dependency added."), "success")
+        return redirect(url_for("task_view", task_id=task_id) + "#deps")
+
+    @app.post("/task/<task_id>/blocked_by/<blocker_id>/delete")
+    def remove_dependency(task_id, blocker_id):
+        """Remove the edge task_id -> blocker_id; return to the page it came from."""
+        flash_commit(engine.remove_dependency(task_id, blocker_id))
+        flash(_("Dependency removed."), "success")
+        here = request.form.get("from") or task_id
+        return redirect(url_for("task_view", task_id=here) + "#deps")
 
     @app.post("/task/<task_id>/delete")
     def delete_task(task_id):

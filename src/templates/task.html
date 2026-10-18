@@ -1,10 +1,62 @@
 {% extends "base.html" %}
 {% from "_macros.html" import tag_chip %}
 {% block title %}{{ _('New task') if is_new else task.id }}{% endblock %}
+{% macro dep_list(items, kind, task) %}
+  <ul class="dep-list">
+  {% for other_id, t in items %}
+    <li>
+      {% if t %}<span class="status s-{{ t.status }}">{{ status_label(t.status) }}</span>{% else %}<span class="status s-blocked">{{ _('missing') }}</span>{% endif %}
+      <a href="{{ url_for('task_view', task_id=other_id) }}"><bdi dir="ltr" class="id">{{ other_id }}</bdi></a>
+      <span dir="auto" class="dep-title">{{ t.title if t else '' }}</span>
+      {% if kind == 'blocked_by' %}{% set edge_task, edge_blocker = task.id, other_id %}{% else %}{% set edge_task, edge_blocker = other_id, task.id %}{% endif %}
+      <form method="post" class="inline" action="{{ url_for('remove_dependency', task_id=edge_task, blocker_id=edge_blocker) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="from" value="{{ task.id }}">
+        <button class="x-btn" title="{{ _('Remove link') }}" aria-label="{{ _('Remove link') }} {{ other_id }}">×</button>
+      </form>
+    </li>
+  {% else %}
+    <li class="muted">{{ _('Not blocked by anything.') if kind == 'blocked_by' else _('Does not block anything.') }}</li>
+  {% endfor %}
+  </ul>
+{% endmacro %}
+
+{% macro dep_add(kind, task, options, label) %}
+  {% if options %}
+  <form method="post" class="dep-add" action="{{ url_for('add_dependency', task_id=task.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="kind" value="{{ kind }}">
+    <select name="other" aria-label="{{ label }}" required>
+      <option value="">{{ label }}…</option>
+      {% for t in options %}<option value="{{ t.id }}">{{ t.id }} · {{ t.title }}</option>{% endfor %}
+    </select>
+    <button class="btn">{{ _('Add') }}</button>
+  </form>
+  {% endif %}
+{% endmacro %}
+
 {% block content %}
 <div class="task-layout">
 <section class="panel">
   <h2>{% if is_new %}{{ _('New task') }}{% else %}<bdi dir="ltr" class="id">{{ task.id }}</bdi>{% endif %}</h2>
+  {% if not is_new %}
+  {% set open_blockers = blockers|selectattr('1')|rejectattr('1.status', 'equalto', 'done')|list %}
+  <section class="deps" id="deps">
+    {% if open_blockers %}
+      <p class="flash warning">⛔ {{ ngettext('Waiting on %(num)d open task', 'Waiting on %(num)d open tasks', open_blockers|length) }}</p>
+    {% endif %}
+    <div class="dep-group">
+      <h3>⛔ {{ _('Blocked by') }} <span class="muted">{{ blockers|length }}</span></h3>
+      {{ dep_list(blockers, 'blocked_by', task) }}
+      {{ dep_add('blocked_by', task, candidates|rejectattr('id', 'in', task.blocked_by + task.blocks)|list, _('Add blocker')) }}
+    </div>
+    <div class="dep-group">
+      <h3>➜ {{ _('Blocks') }} <span class="muted">{{ blocking|length }}</span></h3>
+      {{ dep_list(blocking, 'blocks', task) }}
+      {{ dep_add('blocks', task, candidates|rejectattr('id', 'in', task.blocked_by + task.blocks)|list, _('Add blocked task')) }}
+    </div>
+  </section>
+  {% endif %}
   <form method="post" action="{{ url_for('create_task') if is_new else url_for('update_task', task_id=task.id) }}"
         class="stack" id="task-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -40,6 +92,8 @@
       </div>
       <datalist id="tag-suggestions">{% for t in all_tags %}<option value="{{ t.tag }}">{% endfor %}</datalist>
     </label>
+    {% if is_new %}
+    <input type="hidden" name="blocked_by_field" value="1">
     <fieldset class="blockers">
       <legend>{{ _('Blocked by') }}</legend>
       {% set checked = candidates|selectattr('id', 'in', task.blocked_by)|list %}
@@ -53,6 +107,7 @@
         <span class="muted">{{ _('No other tasks.') }}</span>
       {% endfor %}
     </fieldset>
+    {% endif %}
     <label>{{ _('Description') }}
       <textarea name="description" rows="8"
         {% if task.lang %}lang="{{ task.lang }}" dir="{{ 'rtl' if task.lang == 'he' else 'ltr' }}"{% else %}dir="auto"{% endif %}>{{ task.description }}</textarea>
@@ -63,8 +118,6 @@
     </div>
   </form>
   {% if not is_new %}
-    {% if task.blocks %}<p class="muted">{{ _('Blocks') }}:
-      {% for b in task.blocks %}<a href="{{ url_for('task_view', task_id=b) }}"><bdi dir="ltr">{{ b }}</bdi></a> {% endfor %}</p>{% endif %}
     <form method="post" action="{{ url_for('delete_task', task_id=task.id) }}" data-confirm>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="btn danger">{{ _('Delete task') }}</button>

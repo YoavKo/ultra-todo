@@ -17,7 +17,8 @@
           <bdi class="id" dir="ltr">{{ t.id }}</bdi>
           {% if t.assignee %}<span dir="auto">👤 {{ t.assignee }}</span>{% endif %}
           {% if t.comment_count %}<span>💬 {{ t.comment_count }}</span>{% endif %}
-          {% if t.blocked_by %}<span title="{{ _('Blocked by') }} {{ t.blocked_by|join(', ') }}">⛓ {{ t.blocked_by|length }}</span>{% endif %}
+          {% if t.blocked_by %}<span title="{{ _('Blocked by') }}: {{ t.blocked_by|join(', ') }}">⛔ {{ t.blocked_by|length }}</span>{% endif %}
+          {% if t.blocks %}<span title="{{ _('Blocks') }}: {{ t.blocks|join(', ') }}">➜ {{ t.blocks|length }}</span>{% endif %}
         </div>
         {% if t.tags %}<div class="chips">{% for tag in t.tags %}{{ tag_chip(tag, f, 'index') }}{% endfor %}</div>{% endif %}
       </article>

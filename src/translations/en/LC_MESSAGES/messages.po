@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ultra-todo 0.1.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-18 19:34+0300\n"
+"POT-Creation-Date: 2026-10-18 19:38+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -84,6 +84,12 @@ msgid "Task %(id)s created."
 msgstr ""
 
 msgid "Task saved."
+msgstr ""
+
+msgid "Dependency added."
+msgstr ""
+
+msgid "Dependency removed."
 msgstr ""
 
 #, python-format
@@ -200,6 +206,9 @@ msgstr ""
 msgid "Blocked by"
 msgstr ""
 
+msgid "Blocks"
+msgstr ""
+
 msgid "Back"
 msgstr ""
 
@@ -213,6 +222,33 @@ msgid "Status"
 msgstr ""
 
 msgid "No tasks match."
+msgstr ""
+
+msgid "missing"
+msgstr ""
+
+msgid "Remove link"
+msgstr ""
+
+msgid "Not blocked by anything."
+msgstr ""
+
+msgid "Does not block anything."
+msgstr ""
+
+msgid "Add"
+msgstr ""
+
+#, python-format
+msgid "Waiting on %(num)d open task"
+msgid_plural "Waiting on %(num)d open tasks"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Add blocker"
+msgstr ""
+
+msgid "Add blocked task"
 msgstr ""
 
 msgid "optional, generated if empty"
@@ -240,9 +276,6 @@ msgid "Create"
 msgstr ""
 
 msgid "Save"
-msgstr ""
-
-msgid "Blocks"
 msgstr ""
 
 msgid "Delete task"

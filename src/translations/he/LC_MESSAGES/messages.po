@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ultra-todo 0.1.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-18 19:34+0300\n"
+"POT-Creation-Date: 2026-10-18 19:38+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: he\n"
@@ -89,6 +89,12 @@ msgstr "המשימה %(id)s נוצרה."
 
 msgid "Task saved."
 msgstr "המשימה נשמרה."
+
+msgid "Dependency added."
+msgstr "התלות נוספה."
+
+msgid "Dependency removed."
+msgstr "התלות הוסרה."
 
 #, python-format
 msgid "Task %(id)s deleted."
@@ -204,6 +210,9 @@ msgstr "שגיאה"
 msgid "Blocked by"
 msgstr "חסום ע״י"
 
+msgid "Blocks"
+msgstr "חוסם את"
+
 msgid "Back"
 msgstr "חזרה"
 
@@ -218,6 +227,33 @@ msgstr "סטטוס"
 
 msgid "No tasks match."
 msgstr "אין משימות מתאימות."
+
+msgid "missing"
+msgstr "חסרה"
+
+msgid "Remove link"
+msgstr "הסרת הקישור"
+
+msgid "Not blocked by anything."
+msgstr "לא חסומה ע״י אף משימה."
+
+msgid "Does not block anything."
+msgstr "לא חוסמת אף משימה."
+
+msgid "Add"
+msgstr "הוספה"
+
+#, python-format
+msgid "Waiting on %(num)d open task"
+msgid_plural "Waiting on %(num)d open tasks"
+msgstr[0] "ממתינה למשימה פתוחה אחת"
+msgstr[1] "ממתינה ל-%(num)d משימות פתוחות"
+
+msgid "Add blocker"
+msgstr "הוספת משימה חוסמת"
+
+msgid "Add blocked task"
+msgstr "הוספת משימה שנחסמת"
 
 msgid "optional, generated if empty"
 msgstr "אופציונלי, ייווצר אוטומטית אם ריק"
@@ -245,9 +281,6 @@ msgstr "יצירה"
 
 msgid "Save"
 msgstr "שמירה"
-
-msgid "Blocks"
-msgstr "חוסם את"
 
 msgid "Delete task"
 msgstr "מחיקת משימה"

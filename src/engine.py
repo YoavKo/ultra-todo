@@ -498,12 +498,17 @@ class Engine:
                 "SELECT task_id, blocked_by_id FROM dependencies WHERE project_path=? "
                 "ORDER BY blocked_by_id", (p,)):
             deps.setdefault(r["task_id"], []).append(r["blocked_by_id"])
+        blocks: dict[str, list[str]] = {}
+        for tid, bl in deps.items():
+            for b in bl:
+                blocks.setdefault(b, []).append(tid)
         counts = {r["task_id"]: r["n"] for r in self.db.execute(
             "SELECT task_id, COUNT(*) n FROM comments WHERE project_path=? GROUP BY task_id", (p,))}
         for t in tasks:
             t.pop("search", None)
             t["tags"] = tags.get(t["id"], [])
             t["blocked_by"] = deps.get(t["id"], [])
+            t["blocks"] = sorted(blocks.get(t["id"], []))
             t["comment_count"] = counts.get(t["id"], 0)
         return tasks
 
@@ -536,11 +541,7 @@ class Engine:
                                (self.project, task_id)).fetchall()
         if not rows:
             raise NotFound(task_id)
-        task = self._task_rows(rows)[0]
-        task["blocks"] = [r["task_id"] for r in self.db.execute(
-            "SELECT task_id FROM dependencies WHERE project_path=? AND blocked_by_id=? "
-            "ORDER BY task_id", (self.project, task_id))]
-        return task
+        return self._task_rows(rows)[0]
 
     def all_tags(self) -> list[dict[str, Any]]:
         rows = self.db.execute(
@@ -660,6 +661,23 @@ class Engine:
 
     def set_status(self, task_id: str, status: str) -> tuple[dict[str, Any], str | None]:
         return self.save_task({"id": task_id, "status": status})
+
+    def add_dependency(self, task_id: str, blocker_id: str) -> str | None:
+        """Mark ``task_id`` as blocked by ``blocker_id`` (validated as a DAG)."""
+        with self.lock:
+            current = self.get_task(task_id)["blocked_by"]
+            if blocker_id in current:
+                return None
+            return self.save_task({"id": task_id, "blocked_by": current + [blocker_id]})[1]
+
+    def remove_dependency(self, task_id: str, blocker_id: str) -> str | None:
+        """Drop ``blocker_id`` from ``task_id``'s blockers (works for dangling ids too)."""
+        with self.lock:
+            current = self.get_task(task_id)["blocked_by"]
+            if blocker_id not in current:
+                return None
+            return self.save_task({"id": task_id,
+                                   "blocked_by": [b for b in current if b != blocker_id]})[1]
 
     def delete_task(self, task_id: str) -> str | None:
         import shutil

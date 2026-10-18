@@ -45,8 +45,8 @@ def test_create_update_and_cycle(client):
     r = post(client, "/task", data={"title": "New one", "tags_text": "a, b", "status": "todo"})
     assert r.status_code == 302
     assert client.eng.get_task("TKT-103")["tags"] == ["a", "b"]
-    r = post(client, "/task/TKT-101", data={"title": "x", "status": "todo", "blocked_by": "TKT-102"})
-    assert r.status_code == 400
+    r = post(client, "/task/TKT-101/dependency", data={"kind": "blocked_by", "other": "TKT-102"})
+    assert r.status_code == 400 and "TKT-101" in r.get_data(as_text=True)
     r = client.post("/task/TKT-101/status", json={"status": "done"},
                     headers={"X-CSRF-Token": client.token})
     assert r.get_json()["task"]["status"] == "done"
@@ -91,13 +91,55 @@ def test_api_tags_counts(client):
         {"ui": 1, "דחוף": 1, "api": 1}
 
 
-def test_unblock_by_unchecking_all(client):
+def test_dependencies_shown_both_ways_and_removable(client):
+    # TKT-102 is blocked by TKT-101
     html = client.get("/task/TKT-102").get_data(as_text=True)
-    assert re.search(r'type="checkbox" name="blocked_by" value="TKT-101" checked', html)
-    # unchecked checkboxes send nothing -> the blocker is removed
-    r = post(client, "/task/TKT-102", data={"title": "Second", "status": "todo"})
-    assert r.status_code == 302
+    deps = re.search(r'<section class="deps".*?</section>', html, re.S).group(0)
+    assert "TKT-101" in deps and "שלום עולם" in deps
+    assert "/task/TKT-102/blocked_by/TKT-101/delete" in deps
+    assert "Waiting on 1 open task" in html
+    html = client.get("/task/TKT-101").get_data(as_text=True)
+    deps = re.search(r'<section class="deps".*?</section>', html, re.S).group(0)
+    assert "TKT-102" in deps and "/task/TKT-102/blocked_by/TKT-101/delete" in deps
+    # board card shows both directions
+    board = client.get("/").get_data(as_text=True)
+    assert "⛔ 1" in board and "➜ 1" in board
+
+    # remove from the *blocking* task's page; we land back on it
+    r = post(client, "/task/TKT-102/blocked_by/TKT-101/delete", data={"from": "TKT-101"})
+    assert r.status_code == 302 and r.headers["Location"].endswith("/task/TKT-101#deps")
     assert client.eng.get_task("TKT-102")["blocked_by"] == []
     assert client.eng.get_task("TKT-101")["blocks"] == []
+
+
+def test_add_dependency_both_directions_and_cycle(client):
+    post(client, "/task", data={"id": "C", "title": "c", "status": "todo"})
+    r = post(client, "/task/C/dependency", data={"kind": "blocked_by", "other": "TKT-102"})
+    assert r.status_code == 302 and client.eng.get_task("C")["blocked_by"] == ["TKT-102"]
+    # C blocks 101 would close the loop 101 -> C -> 102 -> 101
+    r = post(client, "/task/C/dependency", data={"kind": "blocks", "other": "TKT-101"})
+    assert r.status_code == 400
+    assert client.eng.get_task("TKT-101")["blocked_by"] == []
+    r = post(client, "/task/TKT-101/dependency", data={"kind": "blocks", "other": "C"})
+    assert r.status_code == 302 and "TKT-101" in client.eng.get_task("C")["blocked_by"]
+
+
+def test_editing_task_keeps_blockers(client):
+    # the edit form no longer carries blockers; saving it must not clear them
+    r = post(client, "/task/TKT-102", data={"title": "Second!", "status": "todo"})
+    assert r.status_code == 302
+    assert client.eng.get_task("TKT-102")["blocked_by"] == ["TKT-101"]
+
+
+def test_remove_dangling_blocker(client, repo):
+    import json
+    p = repo / ".todo/tasks/TKT-102.json5"
+    d = json.loads(p.read_text()); d["blocked_by"] = ["TKT-101"]; p.write_text(json.dumps(d))
+    (repo / ".todo/tasks/TKT-101.json5").unlink()
     html = client.get("/task/TKT-102").get_data(as_text=True)
-    assert "checked" not in re.search(r'<fieldset class="blockers">.*?</fieldset>', html, re.S).group(0)
+    assert "/task/TKT-102/blocked_by/TKT-101/delete" in html
+
+
+def test_dependencies_in_hebrew(client):
+    html = client.get("/task/TKT-102?lang=he").get_data(as_text=True)
+    assert "חסום ע״י" in html and "ממתינה למשימה פתוחה אחת" in html and "הסרת הקישור" in html

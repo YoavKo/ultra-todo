@@ -66,6 +66,12 @@ msgstr ""
 msgid "Task saved."
 msgstr ""
 
+msgid "Dependency added."
+msgstr ""
+
+msgid "Dependency removed."
+msgstr ""
+
 #, python-format
 msgid "Task %(id)s deleted."
 msgstr ""
@@ -180,6 +186,9 @@ msgstr ""
 msgid "Blocked by"
 msgstr ""
 
+msgid "Blocks"
+msgstr ""
+
 msgid "Back"
 msgstr ""
 
@@ -193,6 +202,33 @@ msgid "Status"
 msgstr ""
 
 msgid "No tasks match."
+msgstr ""
+
+msgid "missing"
+msgstr ""
+
+msgid "Remove link"
+msgstr ""
+
+msgid "Not blocked by anything."
+msgstr ""
+
+msgid "Does not block anything."
+msgstr ""
+
+msgid "Add"
+msgstr ""
+
+#, python-format
+msgid "Waiting on %(num)d open task"
+msgid_plural "Waiting on %(num)d open tasks"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Add blocker"
+msgstr ""
+
+msgid "Add blocked task"
 msgstr ""
 
 msgid "optional, generated if empty"
@@ -220,9 +256,6 @@ msgid "Create"
 msgstr ""
 
 msgid "Save"
-msgstr ""
-
-msgid "Blocks"
 msgstr ""
 
 msgid "Delete task"
