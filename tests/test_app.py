@@ -158,3 +158,16 @@ def test_priority_form_filter_and_hebrew(client):
     todo = re.search(r'data-status="todo".*?</section>', client.get("/").get_data(as_text=True), re.S).group(0)
     order = re.findall(r'data-id="([^"]+)"', todo)
     assert order.index("A0") < order.index("Z")
+
+
+def test_bind_socket_picks_next_free_port():
+    import socket
+    from app import bind_socket
+    first = bind_socket("127.0.0.1", None)
+    second = bind_socket("127.0.0.1", None)
+    try:
+        assert second.getsockname()[1] > first.getsockname()[1]
+        with pytest.raises(SystemExit, match="in use"):
+            bind_socket("127.0.0.1", first.getsockname()[1])
+    finally:
+        first.close(); second.close()

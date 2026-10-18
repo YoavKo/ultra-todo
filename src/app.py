@@ -8,6 +8,7 @@ import argparse
 import logging
 import re
 import secrets
+import socket
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -376,12 +377,36 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
     return app
 
 
+DEFAULT_PORT = 8080
+
+
+def bind_socket(host: str, port: int | None, tries: int = 50) -> socket.socket:
+    """Bind a listening socket. With no explicit port, take the first free one from 8080 up,
+    so several instances (one per repo) can run side by side."""
+    ports = [port] if port is not None else range(DEFAULT_PORT, DEFAULT_PORT + tries)
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    err = None
+    for p in ports:
+        sock = socket.socket(family, socket.SOCK_STREAM)
+        try:
+            sock.bind((host, p))
+            return sock
+        except OSError as e:
+            sock.close()
+            err = e
+    if port is not None:
+        raise SystemExit(f"error: port {port} on {host} is in use ({err.strerror}); "
+                         "pick another with --port or omit it to choose a free one")
+    raise SystemExit(f"error: no free port in {DEFAULT_PORT}-{DEFAULT_PORT + tries - 1}")
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="ultra-todo", description="Local GitOps task manager")
     ap.add_argument("--target", required=True, help="path of the git repository to manage")
     ap.add_argument("--lang", choices=SUPPORTED, help="default UI language")
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8080)
+    ap.add_argument("--port", type=int,
+                    help=f"port (default: first free from {DEFAULT_PORT})")
     ap.add_argument("--auto-commit", action="store_true", help="commit every change")
     ap.add_argument("--author", help="override comment author (default: git config user.name)")
     ap.add_argument("--max-attachment-mb", type=float, default=10)
@@ -401,13 +426,16 @@ def main(argv=None) -> None:
     log.info("%s: %s", engine.project, "full scan" if s["full"]
              else ("refreshed" if s.changed else "cache hit"))
     app = create_app(engine, args.lang)
-    url = f"http://{args.host}:{args.port}/"
-    log.info("serving on %s", url)
+    sock = bind_socket(args.host, args.port)
+    port = sock.getsockname()[1]
+    log.info("serving %s on http://%s:%d/", engine.project, args.host, port)
     if args.debug:
-        app.run(args.host, args.port, debug=True)
+        sock.close()  # the reloader binds its own socket
+        app.run(args.host, port, debug=True)
     else:
         from waitress import serve
-        serve(app, host=args.host, port=args.port, threads=args.threads)
+        sock.listen(1024)
+        serve(app, sockets=[sock], threads=args.threads)
 
 
 if __name__ == "__main__":

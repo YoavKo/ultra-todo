@@ -35,7 +35,7 @@ Without uv: `pip install -r requirements.txt && python src/app.py --target ...`.
 
 ### Shell shortcut
 
-Add this to `~/.bashrc` (adjust the checkout path) to run `utd [path] [flags]` from anywhere;
+Add this to `~/.bashrc` (adjust the checkout path) to run `utd [path] [flags]` from anywhere, with tab completion;
 the path defaults to the current directory and extra flags are passed through:
 
 ```bash
@@ -46,6 +46,22 @@ utd() {
     target="$(realpath -- "$target")" || return 1
     uv run --project "$HOME/path/to/ultra-todo" ultra-todo --target "$target" "$@"
 }
+
+# tab completion for utd: a directory first, then ultra-todo flags
+_utd() {
+    local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
+    case "$prev" in
+        --lang) COMPREPLY=($(compgen -W "en he" -- "$cur")); return ;;
+        --db) compopt -o filenames; COMPREPLY=($(compgen -f -- "$cur")); return ;;
+        --host|--port|--author|--max-attachment-mb|--threads) return ;;
+    esac
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "--lang --host --port --auto-commit --author --max-attachment-mb --db --threads --debug -h --help" -- "$cur"))
+    elif [ "$COMP_CWORD" -eq 1 ]; then
+        compopt -o filenames; COMPREPLY=($(compgen -d -- "$cur"))
+    fi
+}
+complete -F _utd utd
 ```
 
 ```bash
@@ -60,7 +76,7 @@ utd ~/work/some-repo --lang he --port 9000
 |---|---|
 | `--target PATH` | Git repo to manage (must contain or get `.todo/tasks/`) |
 | `--lang he\|en` | Default UI language (users can override in the UI) |
-| `--port N` | Port (default 8080), bound to 127.0.0.1 |
+| `--port N` | Port (default: first free port from 8080 up, so several repos can run at once) |
 | `--auto-commit` | Commit each change as `task: update <ID>` |
 | `--author NAME` | Override the comment author (default: `git config user.name`) |
 | `--max-attachment-mb N` | Attachment size limit (default 10) |
