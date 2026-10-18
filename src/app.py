@@ -419,9 +419,24 @@ def commands_help() -> str:
     return "commands:\n" + "\n".join(f"  • {c:<{width}}  {d}" for c, d in rows)
 
 
+def serve_hint() -> str:
+    return f"{prog()} PATH" if prog() == "utd" else f"{prog()} --target PATH"
+
+
 def cmd_ls(argv: list[str]) -> None:
-    ap = argparse.ArgumentParser(prog=f"{prog()} ls", description="List known repositories")
-    ap.add_argument("--names", action="store_true", help="names only (for shell completion)")
+    p = prog()
+    ap = argparse.ArgumentParser(
+        prog=f"{p} ls", formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=f"List the repos ultra-todo knows: every repo served with {serve_hint()}\n"
+                    "is remembered. Most recently opened first.",
+        epilog="columns:\n"
+               "  • number            use it with open / forget; shifts as you open repos\n"
+               "  • last opened       local time, '-' if not opened since the list existed\n"
+               "  • [x open, y done]  task counts (open = todo, in progress, blocked),\n"
+               "                      refreshed from the repo first, so they are current\n"
+               "  • name, path        '(missing)' if the directory no longer exists\n"
+               f"\nsee also: {p} open -h, {p} forget -h")
+    ap.add_argument("--names", action="store_true", help="names only (used by tab completion)")
     ap.add_argument("--all", action="store_true", help="with --names: include missing repos")
     args = ap.parse_args(argv)
     known = repos.known()
@@ -429,8 +444,7 @@ def cmd_ls(argv: list[str]) -> None:
         print("\n".join(sorted({r["name"] for r in known if r["exists"] or args.all})))
         return
     if not known:
-        print(f"no repos yet; serve one first: {prog()} "
-              + ("PATH" if prog() == "utd" else "--target PATH"))
+        print(f"no repos yet; serve one first: {serve_hint()}")
         return
     rows = []
     for i, r in enumerate(known, 1):
@@ -447,11 +461,19 @@ def cmd_ls(argv: list[str]) -> None:
 
 
 def cmd_forget(argv: list[str]) -> None:
+    p = prog()
     ap = argparse.ArgumentParser(
-        prog=f"{prog()} forget",
-        description="Remove repos from the known list (their files are not touched)")
+        prog=f"{p} forget", formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Remove repos from the known list and drop their cached index.\n"
+                    "The repos' files are not touched; serving one again adds it back.",
+        epilog="examples:\n"
+               f"  • {p} forget old-repo        by name (case-insensitive)\n"
+               f"  • {p} forget 3,5             by ls numbers (or: {p} forget 3 5)\n"
+               f"  • {p} forget old-repo,4      mixed\n"
+               "\nNumbers refer to the ls listing before anything is removed. If any name or\n"
+               "number is unknown, nothing is removed. Missing repos can be forgotten too.")
     ap.add_argument("repos", nargs="+", metavar="NAME|NUMBER",
-                    help="names or ls numbers; comma-separated lists work too (3,5)")
+                    help="names or ls numbers, space- or comma-separated")
     args = ap.parse_args(argv)
     names = [n.strip() for a in args.repos for n in a.split(",") if n.strip()]
     try:
@@ -462,6 +484,22 @@ def cmd_forget(argv: list[str]) -> None:
         print(f"forgot {r['name']}  {r['path']}")
 
 
+def open_parser() -> argparse.ArgumentParser:
+    p = prog()
+    ap = argparse.ArgumentParser(
+        prog=f"{p} open", usage=f"{p} open [-h] NAME|NUMBER [flags]",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=f"Serve a known repo by name, without typing its path.",
+        epilog="examples:\n"
+               f"  • {p} open my-repo              by name (case-insensitive; Tab completes)\n"
+               f"  • {p} open 1                    by ls number (1 = most recently opened)\n"
+               f"  • {p} open my-repo --lang he --port 9000\n"
+               f"\nflags are the same as for serving a path: see {p} -h\n"
+               f"If two repos share a name, use the number or {serve_hint()}.")
+    ap.add_argument("repo", metavar="NAME|NUMBER", help=f"a repo name or number from {p} ls")
+    return ap
+
+
 def main(argv=None) -> None:
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv[:1] == ["ls"]:
@@ -469,8 +507,10 @@ def main(argv=None) -> None:
     if argv[:1] == ["forget"]:
         return cmd_forget(argv[1:])
     if argv[:1] == ["open"]:
+        if {"-h", "--help"} & set(argv[1:]):
+            return open_parser().print_help()
         if len(argv) < 2 or argv[1].startswith("-"):
-            raise SystemExit(f"usage: {prog()} open NAME|NUMBER [options]  (see: {prog()} ls)")
+            open_parser().error("NAME|NUMBER is required")
         try:
             argv = ["--target", repos.resolve(argv[1])] + argv[2:]
         except EngineError as e:

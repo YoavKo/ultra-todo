@@ -60,6 +60,10 @@ _utd() {
         --db) compopt -o filenames; COMPREPLY=($(compgen -f -- "$cur")); return ;;
         --host|--port|--author|--max-attachment-mb|--threads) return ;;
     esac
+    case "${COMP_WORDS[1]}" in
+        ls|forget|open) if [[ "$cur" == -* ]] && [ "$COMP_CWORD" -eq 2 ]; then
+                COMPREPLY=($(compgen -W "-h --help" -- "$cur")); return; fi ;;
+    esac
     [ "${COMP_WORDS[1]}" = ls ] && return
     if [ "${COMP_WORDS[1]}" = forget ] && [ "$COMP_CWORD" -ge 2 ]; then
         local IFS=$'\n' pre="" name
