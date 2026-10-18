@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import re
 import secrets
 import socket
@@ -402,8 +403,24 @@ def bind_socket(host: str, port: int | None, tries: int = 50) -> socket.socket:
     raise SystemExit(f"error: no free port in {DEFAULT_PORT}-{DEFAULT_PORT + tries - 1}")
 
 
+def prog() -> str:
+    """Program name for help text: the `utd` shell shortcut sets ULTRA_TODO_PROG=utd."""
+    return os.environ.get("ULTRA_TODO_PROG") or "ultra-todo"
+
+
+def commands_help() -> str:
+    p = prog()
+    serve = f"{p} [PATH] [flags]" if p == "utd" else f"{p} --target PATH [flags]"
+    rows = [(serve, "serve a repo" + (" (PATH defaults to .)" if p == "utd" else "")),
+            (f"{p} ls", "list known repos: number, last opened, [open, done], name, path"),
+            (f"{p} open NAME|NUMBER [flags]", "serve a known repo by name or ls number"),
+            (f"{p} forget NAME|NUMBER,...", "remove repos from the list (files untouched)")]
+    width = max(len(c) for c, _ in rows)
+    return "commands:\n" + "\n".join(f"  • {c:<{width}}  {d}" for c, d in rows)
+
+
 def cmd_ls(argv: list[str]) -> None:
-    ap = argparse.ArgumentParser(prog="ultra-todo ls", description="List known repositories")
+    ap = argparse.ArgumentParser(prog=f"{prog()} ls", description="List known repositories")
     ap.add_argument("--names", action="store_true", help="names only (for shell completion)")
     ap.add_argument("--all", action="store_true", help="with --names: include missing repos")
     args = ap.parse_args(argv)
@@ -412,7 +429,8 @@ def cmd_ls(argv: list[str]) -> None:
         print("\n".join(sorted({r["name"] for r in known if r["exists"] or args.all})))
         return
     if not known:
-        print("no repos yet; run: ultra-todo --target PATH")
+        print(f"no repos yet; serve one first: {prog()} "
+              + ("PATH" if prog() == "utd" else "--target PATH"))
         return
     rows = []
     for i, r in enumerate(known, 1):
@@ -430,7 +448,7 @@ def cmd_ls(argv: list[str]) -> None:
 
 def cmd_forget(argv: list[str]) -> None:
     ap = argparse.ArgumentParser(
-        prog="ultra-todo forget",
+        prog=f"{prog()} forget",
         description="Remove repos from the known list (their files are not touched)")
     ap.add_argument("repos", nargs="+", metavar="NAME|NUMBER",
                     help="names or ls numbers; comma-separated lists work too (3,5)")
@@ -452,19 +470,18 @@ def main(argv=None) -> None:
         return cmd_forget(argv[1:])
     if argv[:1] == ["open"]:
         if len(argv) < 2 or argv[1].startswith("-"):
-            raise SystemExit("usage: ultra-todo open NAME|NUMBER [options]  (see: ultra-todo ls)")
+            raise SystemExit(f"usage: {prog()} open NAME|NUMBER [options]  (see: {prog()} ls)")
         try:
             argv = ["--target", repos.resolve(argv[1])] + argv[2:]
         except EngineError as e:
             raise SystemExit(f"error: {e}")
+    utd = prog() == "utd"
     ap = argparse.ArgumentParser(
-        prog="ultra-todo", description="Local GitOps task manager",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="also:\n"
-               "  • ultra-todo ls                         list known repos (numbered)\n"
-               "  • ultra-todo open NAME|NUMBER [flags]   serve a known repo\n"
-               "  • ultra-todo forget NAME|NUMBER,...     remove repos from the list")
-    ap.add_argument("--target", required=True, help="path of the git repository to manage")
+        prog=prog(), description="Local GitOps task manager",
+        usage="utd [PATH | ls | open NAME|NUMBER | forget NAME|NUMBER,...] [flags]" if utd else None,
+        formatter_class=argparse.RawDescriptionHelpFormatter, epilog=commands_help())
+    ap.add_argument("--target", required=True,
+                    help=argparse.SUPPRESS if utd else "path of the git repository to manage")
     ap.add_argument("--lang", choices=SUPPORTED, help="default UI language")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int,

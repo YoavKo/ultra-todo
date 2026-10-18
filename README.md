@@ -44,12 +44,12 @@ the path defaults to the current directory and extra flags are passed through:
 utd() {
     local proj="$HOME/path/to/ultra-todo"
     case "$1" in
-        ls|open|forget) uv run --project "$proj" ultra-todo "$@"; return ;;
+        ls|open|forget) ULTRA_TODO_PROG=utd uv run --project "$proj" ultra-todo "$@"; return ;;
     esac
     local target=.
     if [ $# -gt 0 ] && [[ "$1" != -* ]]; then target="$1"; shift; fi
     target="$(realpath -- "$target")" || return 1
-    uv run --project "$proj" ultra-todo --target "$target" "$@"
+    ULTRA_TODO_PROG=utd uv run --project "$proj" ultra-todo --target "$target" "$@"
 }
 
 # tab completion for utd: a command or directory first, repo names after open/forget, then flags
