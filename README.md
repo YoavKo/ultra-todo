@@ -33,6 +33,26 @@ uv run ultra-todo --target /path/to/repo --lang he --port 9000 --auto-commit
 Global install: `uv tool install .` then `ultra-todo --target ...`.
 Without uv: `pip install -r requirements.txt && python src/app.py --target ...`.
 
+### Shell shortcut
+
+Add this to `~/.bashrc` (adjust the checkout path) to run `utd [path] [flags]` from anywhere;
+the path defaults to the current directory and extra flags are passed through:
+
+```bash
+# ultra-todo: utd [path] [extra flags]  (path defaults to .)
+utd() {
+    local target="${1:-.}"
+    [ $# -gt 0 ] && shift
+    target="$(realpath -- "$target")" || return 1
+    uv run --project "$HOME/path/to/ultra-todo" ultra-todo --target "$target" "$@"
+}
+```
+
+```bash
+utd                          # current directory
+utd ~/work/some-repo --lang he --port 9000
+```
+
 ### CLI flags
 
 | Flag | Meaning |
