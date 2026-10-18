@@ -2,7 +2,7 @@
 
 A self-hosted, local-first task manager written in Python (Flask). It manages **any local Git repository** that contains a `.todo/tasks/` directory of plain-text JSON5 files. Hebrew and English are both supported (UI, RTL layout, and content).
 
-> Status: design phase. See [PLAN.md](PLAN.md) (English) and [plan_he.html](plan_he.html) (full plan in Hebrew).
+> Status: v0.1 – working. Design: [PLAN.md](PLAN.md) (English) and [plan_he.html](plan_he.html) (full plan in Hebrew).
 
 ## Core ideas
 
@@ -48,7 +48,7 @@ Without uv: `pip install -r requirements.txt && python src/app.py --target ...`.
 <repo>/.todo/tasks/
 ├── TKT-101.json5
 └── TKT-101/
-    ├── comments/2026-10-18T10-00-00Z-ab12cd.json5
+    ├── comments/20261018T100000123Z-ab12cd.json5
     └── attachments/<comment-id>/screenshot.png
 ```
 
@@ -70,21 +70,25 @@ Comment (one file per comment, so concurrent comments never conflict):
 
 ```json5
 {
-  id: "ab12cd",
-  author: "Yoav <yoav@example.com>",
+  id: "20261018T100000123Z-ab12cd",   // = file name
+  author: "Yoav <yoav@example.com>",     // from git config, set by the server
   created_at: "2026-10-18T10:00:00Z",
   edited_at: null,
   body: "…",
-  attachments: [{ name: "screenshot.png", file: "attachments/ab12cd/screenshot.png", mime: "image/png", size: 48213 }],
+  attachments: [{ name: "screenshot.png", file: "attachments/20261018T100000123Z-ab12cd/screenshot.png", mime: "image/png", size: 48213 }],
 }
 ```
 
-Attachments are user files committed to the repo; consider Git LFS for large ones.
+Notes:
+- Hand-written JSON5 (comments, unquoted keys, trailing commas) is read fine, but when the app saves a task it rewrites the file as deterministic JSON (valid JSON5), so `//` comments in that file are lost. Extra fields you add are kept.
+- Attachments are user files committed to the repo; consider Git LFS for large ones. PNG/JPEG/GIF/WebP show inline; everything else (including SVG) is served as a download.
+- Only the comment's author (by git identity) can edit or delete it.
+- Uncommitted edits under `.todo/` are picked up too (the cache key is `HEAD` + the dirty-file list).
 
 ## Translations
 
 ```bash
-uv run pybabel extract -F babel.cfg -o src/translations/messages.pot src
+uv run pybabel extract -F babel.cfg -k _ -k gettext -k ngettext:1,2 --no-location -o src/translations/messages.pot src
 uv run pybabel update -i src/translations/messages.pot -d src/translations
 uv run pybabel compile -d src/translations
 ```
@@ -92,5 +96,8 @@ uv run pybabel compile -d src/translations
 ## Development
 
 ```bash
-uv run pytest
+uv run pytest                      # engine, sync (temp bare remote + 2 clones), routes, i18n
+uv run ultra-todo --target . --debug   # Flask dev server with reload
 ```
+
+Layout: `src/engine.py` (files, git, SQLite index, sync), `src/graph.py` (DAG), `src/i18n.py`, `src/app.py` (routes + CLI), `src/templates/`, `src/static/`, `src/translations/`.
