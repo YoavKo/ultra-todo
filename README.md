@@ -39,11 +39,12 @@ Add this to `~/.bashrc` (adjust the checkout path) to run `utd [path] [flags]` f
 the path defaults to the current directory and extra flags are passed through:
 
 ```bash
-# ultra-todo: utd [path] [flags] | utd ls | utd open NAME [flags]  (path defaults to .)
+# ultra-todo: utd [path] [flags] | utd ls | utd open NAME|N [flags] | utd forget NAME|N,...
+# (path defaults to .)
 utd() {
     local proj="$HOME/path/to/ultra-todo"
     case "$1" in
-        ls|open) uv run --project "$proj" ultra-todo "$@"; return ;;
+        ls|open|forget) uv run --project "$proj" ultra-todo "$@"; return ;;
     esac
     local target=.
     if [ $# -gt 0 ] && [[ "$1" != -* ]]; then target="$1"; shift; fi
@@ -51,7 +52,7 @@ utd() {
     uv run --project "$proj" ultra-todo --target "$target" "$@"
 }
 
-# tab completion for utd: ls/open or a directory first, repo names after open, then flags
+# tab completion for utd: a command or directory first, repo names after open/forget, then flags
 _utd() {
     local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
     case "$prev" in
@@ -60,6 +61,13 @@ _utd() {
         --host|--port|--author|--max-attachment-mb|--threads) return ;;
     esac
     [ "${COMP_WORDS[1]}" = ls ] && return
+    if [ "${COMP_WORDS[1]}" = forget ] && [ "$COMP_CWORD" -ge 2 ]; then
+        local IFS=$'\n' pre="" name
+        [[ "$cur" == *,* ]] && pre="${cur%,*}," && cur="${cur##*,}"
+        COMPREPLY=($(for name in $(utd ls --names --all 2>/dev/null); do
+            [[ "$name" == "$cur"* ]] && echo "$pre$name"; done))
+        return
+    fi
     if [ "${COMP_WORDS[1]}" = open ] && [ "$COMP_CWORD" -eq 2 ]; then
         local IFS=$'\n'
         COMPREPLY=($(compgen -W "$(utd ls --names 2>/dev/null)" -- "$cur"))
@@ -67,7 +75,7 @@ _utd() {
         COMPREPLY=($(compgen -W "--lang --host --port --auto-commit --author --max-attachment-mb --db --threads --debug -h --help" -- "$cur"))
     elif [ "$COMP_CWORD" -eq 1 ]; then
         compopt -o filenames
-        COMPREPLY=($(compgen -W "ls open" -- "$cur") $(compgen -d -- "$cur"))
+        COMPREPLY=($(compgen -W "ls open forget" -- "$cur") $(compgen -d -- "$cur"))
     fi
 }
 complete -F _utd utd
@@ -80,12 +88,14 @@ utd ~/work/some-repo --lang he --port 9000
 utd ls                       # known repos, numbered: last opened, name, path
 utd open some-repo           # open a known repo by name (Tab completes names)
 utd open 1                   # ...or by its number in ls (1 = most recently opened)
+utd forget 3,5               # drop repos from the list (names or numbers; files untouched)
 ```
 
 Every repo you serve is remembered in `repos.json` in the user data dir
 (`~/.local/share/ultra-todo/` on Linux); `ultra-todo ls` and `ultra-todo open NAME` work without
 the shortcut too. Names match case-insensitively; if two repos share a name, use the number or the path.
 Numbers follow the `ls` order, so they shift when you open a different repo.
+`forget` also drops the repo from the cache index; opening it again adds it back.
 `ls` and `open` are commands, so to serve a directory with one of those names write `utd ./ls`.
 
 ### CLI flags

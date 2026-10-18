@@ -41,3 +41,24 @@ def test_resolve_by_number(tmp_path, repo):
     other.rmdir()
     with pytest.raises(EngineError, match="missing"):
         repos.resolve("1", reg, db)
+
+
+def test_forget_by_numbers_and_names(tmp_path, repo, make_engine):
+    e = make_engine()
+    e.refresh()
+    reg = tmp_path / "repos.json"
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir(); b.mkdir()
+    for p in (repo, a, b):
+        repos.remember(str(p), reg)
+    # ls order: b(1), a(2), repo(3); numbers are resolved before anything is removed
+    b.rmdir()  # missing repos can be forgotten too
+    removed = repos.forget(["1", "3"], reg, e.db_path)
+    assert {r["path"] for r in removed} == {str(b), str(repo)}
+    assert [r["path"] for r in repos.known(reg, e.db_path)] == [str(a)]  # not re-imported
+    assert e.db.execute("SELECT COUNT(*) FROM tasks WHERE project_path=?",
+                        (e.project,)).fetchone()[0] == 0
+    with pytest.raises(EngineError):
+        repos.forget(["a", "9"], reg, e.db_path)
+    assert [r["path"] for r in repos.known(reg, e.db_path)] == [str(a)]  # all or nothing
+    assert repo.exists()

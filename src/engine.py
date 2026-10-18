@@ -241,6 +241,18 @@ CREATE INDEX IF NOT EXISTS idx_comments_task
 """
 
 
+TABLES = ("projects", "tasks", "dependencies", "task_tags", "comments")
+
+
+def forget_project(db_path: Path, project: str) -> None:
+    """Drop one project's rows from the index (the repo itself is not touched)."""
+    if not Path(db_path).exists():
+        return
+    with sqlite3.connect(db_path, timeout=30) as conn:
+        for t in TABLES:
+            conn.execute(f"DELETE FROM {t} WHERE project_path = ?", (project,))
+
+
 def default_db_path() -> Path:
     return Path(platformdirs.user_cache_dir("ultra-todo")) / "app_global_index.sqlite3"
 
@@ -297,7 +309,7 @@ class Engine:
             ver = self.db.execute("PRAGMA user_version").fetchone()[0]
             if ver != SCHEMA_VERSION:
                 # the index is disposable: drop and rehydrate
-                for t in ("projects", "tasks", "dependencies", "task_tags", "comments"):
+                for t in TABLES:
                     self.db.execute(f"DROP TABLE IF EXISTS {t}")
                 self.db.executescript(SCHEMA)
                 self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")

@@ -1,4 +1,4 @@
-"""Registry of repositories ultra-todo has served, for `ultra-todo ls` / `ultra-todo open NAME`.
+"""Registry of repositories ultra-todo has served, for `ultra-todo ls|open|forget`.
 
 Kept as a small JSON file in the user data dir (not the cache, which is disposable).
 Repos found in the cache index are imported too, so ones opened before the registry
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import platformdirs
 
-from engine import EngineError, default_db_path, fold
+from engine import EngineError, default_db_path, fold, forget_project
 
 
 def default_registry_path() -> Path:
@@ -49,7 +49,7 @@ def _cached_paths(db_path: Path) -> list[str]:
 def remember(repo: str, registry: Path | None = None) -> None:
     path = registry or default_registry_path()
     data = _read(path)
-    data[repo] = {"last_opened": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    data[repo] = {"last_opened": datetime.now(timezone.utc).isoformat(timespec="microseconds")}
     _write(path, data)
 
 
@@ -69,23 +69,42 @@ def known(registry: Path | None = None, db_path: Path | None = None) -> list[dic
     return repos
 
 
-def resolve(name: str, registry: Path | None = None, db_path: Path | None = None) -> str:
-    """Path of the known repo called `name` (case-insensitive), or numbered `name` in `ls`."""
-    listed = known(registry, db_path)
-    repos = [r for r in listed if r["exists"]]
+def _pick(name: str, listed: list[dict], missing_ok: bool) -> dict:
+    repos = listed if missing_ok else [r for r in listed if r["exists"]]
     hits = [r for r in repos if r["name"] == name] or \
            [r for r in repos if fold(r["name"]) == fold(name)]
     if not hits and name.isdigit():
         n = int(name)
         if not 1 <= n <= len(listed):
             raise EngineError(f"no repo number {n} (ultra-todo ls shows 1-{len(listed)})")
-        if not listed[n - 1]["exists"]:
+        if not (missing_ok or listed[n - 1]["exists"]):
             raise EngineError(f"repo {n} is missing: {listed[n - 1]['path']}")
-        return listed[n - 1]["path"]
+        return listed[n - 1]
     if len(hits) == 1:
-        return hits[0]["path"]
+        return hits[0]
     if hits:
         raise EngineError(f"several repos are called {name!r}; use its number from ls or a path:\n"
                           + "\n".join("  " + r["path"] for r in hits))
     names = ", ".join(sorted({r["name"] for r in repos})) or "none yet"
     raise EngineError(f"no known repo called {name!r} (known: {names})")
+
+
+def resolve(name: str, registry: Path | None = None, db_path: Path | None = None) -> str:
+    """Path of the existing repo called `name` (case-insensitive), or numbered `name` in `ls`."""
+    return _pick(name, known(registry, db_path), missing_ok=False)["path"]
+
+
+def forget(names: list[str], registry: Path | None = None,
+           db_path: Path | None = None) -> list[dict]:
+    """Remove repos (by name or `ls` number, missing ones too) from the registry and the
+    cache index. All names are resolved first, so numbers refer to one `ls` listing.
+    Returns the removed entries; nothing is removed if any name fails."""
+    path, db = registry or default_registry_path(), db_path or default_db_path()
+    listed = known(path, db)
+    picked = {r["path"]: r for r in (_pick(n, listed, missing_ok=True) for n in names)}
+    data = _read(path)
+    for p in picked:
+        data.pop(p, None)
+        forget_project(db, p)
+    _write(path, data)
+    return list(picked.values())

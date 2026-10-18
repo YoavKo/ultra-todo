@@ -405,10 +405,11 @@ def bind_socket(host: str, port: int | None, tries: int = 50) -> socket.socket:
 def cmd_ls(argv: list[str]) -> None:
     ap = argparse.ArgumentParser(prog="ultra-todo ls", description="List known repositories")
     ap.add_argument("--names", action="store_true", help="names only (for shell completion)")
+    ap.add_argument("--all", action="store_true", help="with --names: include missing repos")
     args = ap.parse_args(argv)
     known = repos.known()
     if args.names:
-        print("\n".join(sorted({r["name"] for r in known if r["exists"]})))
+        print("\n".join(sorted({r["name"] for r in known if r["exists"] or args.all})))
         return
     if not known:
         print("no repos yet; run: ultra-todo --target PATH")
@@ -422,10 +423,28 @@ def cmd_ls(argv: list[str]) -> None:
         print(f"{i:>{num}}  {when or '-':<16}  {r['name']:<{width}}  {r['path']}{note}")
 
 
+def cmd_forget(argv: list[str]) -> None:
+    ap = argparse.ArgumentParser(
+        prog="ultra-todo forget",
+        description="Remove repos from the known list (their files are not touched)")
+    ap.add_argument("repos", nargs="+", metavar="NAME|NUMBER",
+                    help="names or ls numbers; comma-separated lists work too (3,5)")
+    args = ap.parse_args(argv)
+    names = [n.strip() for a in args.repos for n in a.split(",") if n.strip()]
+    try:
+        removed = repos.forget(names)
+    except EngineError as e:
+        raise SystemExit(f"error: {e}")
+    for r in removed:
+        print(f"forgot {r['name']}  {r['path']}")
+
+
 def main(argv=None) -> None:
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv[:1] == ["ls"]:
         return cmd_ls(argv[1:])
+    if argv[:1] == ["forget"]:
+        return cmd_forget(argv[1:])
     if argv[:1] == ["open"]:
         if len(argv) < 2 or argv[1].startswith("-"):
             raise SystemExit("usage: ultra-todo open NAME|NUMBER [options]  (see: ultra-todo ls)")
@@ -435,7 +454,7 @@ def main(argv=None) -> None:
             raise SystemExit(f"error: {e}")
     ap = argparse.ArgumentParser(
         prog="ultra-todo", description="Local GitOps task manager",
-        epilog="also: 'ultra-todo ls' lists known repos, 'ultra-todo open NAME|NUMBER' opens one")
+        epilog="also: 'ultra-todo ls' lists known repos, 'ultra-todo open NAME|NUMBER' opens one, 'ultra-todo forget NAME|NUMBER,...' removes some")
     ap.add_argument("--target", required=True, help="path of the git repository to manage")
     ap.add_argument("--lang", choices=SUPPORTED, help="default UI language")
     ap.add_argument("--host", default="127.0.0.1")
