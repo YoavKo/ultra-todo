@@ -561,3 +561,256 @@ class Engine:
             d["attachments"] = json.loads(d["attachments"] or "[]")
             out.append(d)
         return out
+
+    # ---- mutations ---------------------------------------------------
+    def task_path(self, task_id: str) -> Path:
+        return self.tasks_dir / f"{valid_id(task_id)}.json5"
+
+    def task_dir(self, task_id: str) -> Path:
+        return self.tasks_dir / valid_id(task_id)
+
+    def _rel(self, path: Path) -> str:
+        return path.relative_to(self.root).as_posix()
+
+    def next_id(self, prefix: str = "TKT-") -> str:
+        nums = [int(m.group(1)) for r in self.db.execute(
+            "SELECT id FROM tasks WHERE project_path=?", (self.project,))
+            if (m := re.match(re.escape(prefix) + r"(\d+)$", r[0]))]
+        n = max(nums, default=100) + 1
+        while self.task_path(f"{prefix}{n}").exists():
+            n += 1
+        return f"{prefix}{n}"
+
+    def _check_graph(self, task: dict[str, Any]) -> None:
+        from graph import cycle_after_setting
+
+        known = {r[0] for r in self.db.execute(
+            "SELECT id FROM tasks WHERE project_path=?", (self.project,))}
+        unknown = [b for b in task["blocked_by"] if b not in known]
+        if unknown:
+            raise ValidationError(f"unknown task id(s): {', '.join(unknown)}")
+        cycle = cycle_after_setting(self.dependency_graph(), task["id"], task["blocked_by"])
+        if cycle:
+            raise CycleError(cycle)
+
+    def _commit(self, paths: list[Path], message: str) -> str | None:
+        """Auto-commit just these paths. Returns an error message or None."""
+        if not self.auto_commit:
+            return None
+        rels = [self._rel(p) for p in paths]
+        try:
+            # a pathspec must exist on disk or in the index, else git aborts
+            tracked = set(run_git(self.root, "ls-files", "-z", "--", *rels).stdout.split("\0"))
+            rels = [r for r in rels if (self.root / r).exists()
+                    or r in tracked or any(t.startswith(r + "/") for t in tracked)]
+            if not rels:
+                return None
+            run_git(self.root, "add", "-A", "--", *rels)
+            staged = run_git(self.root, "diff", "--cached", "--quiet", "--", *rels, check=False)
+            if staged.returncode == 0:
+                return None
+            run_git(self.root, "commit", "-q", "-m", message, "--", *rels)
+        except GitError as e:
+            log.warning("auto-commit failed: %s", e)
+            return str(e)
+        return None
+
+    def _finish(self, paths: list[Path], message: str) -> str | None:
+        err = self._commit(paths, message)
+        self.record_state()
+        return err
+
+    def save_task(self, data: dict[str, Any], create: bool = False) -> tuple[dict[str, Any], str | None]:
+        """Create or update a task. Returns (task, commit_error)."""
+        with self.lock:
+            self.refresh()
+            tid = data.get("id") or (self.next_id() if create else None)
+            if not tid:
+                raise ValidationError("missing task id")
+            path = self.task_path(tid)
+            if create and path.exists():
+                raise ValidationError(f"task {tid} already exists")
+            if not create and not path.exists():
+                raise NotFound(tid)
+            raw = load_file(path) if path.exists() else {}
+            raw.update({k: v for k, v in data.items() if k != "id"})
+            raw["id"] = tid
+            task = clean_task(raw)
+            if not task["title"]:
+                raise ValidationError("title is required")
+            self._check_graph(task)
+            raw.update(task)  # keep unknown user fields, canonical known ones
+            if "lang" not in task:
+                raw.pop("lang", None)
+            dump_file(path, raw)
+            with self.tx() as db:
+                self._upsert_task(db, task)
+            err = self._finish([path], f"task: {'create' if create else 'update'} {tid}")
+            return self.get_task(tid), err
+
+    def set_status(self, task_id: str, status: str) -> tuple[dict[str, Any], str | None]:
+        return self.save_task({"id": task_id, "status": status})
+
+    def delete_task(self, task_id: str) -> str | None:
+        import shutil
+
+        with self.lock:
+            self.refresh()
+            path = self.task_path(task_id)
+            if not path.exists():
+                raise NotFound(task_id)
+            changed = [path]
+            # drop the id from tasks that are blocked by it
+            for dep in self.get_task(task_id)["blocks"]:
+                dpath = self.task_path(dep)
+                raw = load_file(dpath)
+                raw["blocked_by"] = [b for b in raw.get("blocked_by") or [] if b != task_id]
+                dump_file(dpath, raw)
+                with self.tx() as db:
+                    self._upsert_task(db, clean_task(raw, dep))
+                changed.append(dpath)
+            path.unlink()
+            tdir = self.task_dir(task_id)
+            if tdir.is_dir():
+                shutil.rmtree(tdir)
+                changed.append(tdir)
+            with self.tx() as db:
+                self._delete_task_rows(db, task_id)
+            return self._finish(changed, f"task: delete {task_id}")
+
+    # ---- comments ----------------------------------------------------
+    def author_identity(self) -> str:
+        if self.author_override:
+            return self.author_override
+        name = run_git(self.root, "config", "user.name", check=False).stdout.strip()
+        email = run_git(self.root, "config", "user.email", check=False).stdout.strip()
+        if not name:
+            import getpass
+            name = getpass.getuser()
+        return f"{name} <{email}>" if email else name
+
+    def comment_path(self, task_id: str, cid: str) -> Path:
+        if not re.match(r"^[0-9TZ]+-[0-9a-f]+$", cid or ""):
+            raise ValidationError("invalid comment id")
+        return self.task_dir(task_id) / "comments" / f"{cid}.json5"
+
+    def _attachment_dir(self, task_id: str, cid: str) -> Path:
+        self.comment_path(task_id, cid)  # validates cid
+        return self.task_dir(task_id) / "attachments" / cid
+
+    def attachment_path(self, task_id: str, cid: str, name: str) -> Path:
+        base = self._attachment_dir(task_id, cid).resolve()
+        p = (base / name).resolve()
+        if p.parent != base or not p.is_file():
+            raise NotFound(name)
+        return p
+
+    def _store_files(self, task_id: str, cid: str,
+                     files: Iterable[tuple[str, bytes]]) -> list[dict[str, Any]]:
+        import mimetypes
+
+        out = []
+        adir = self._attachment_dir(task_id, cid)
+        for filename, content in files:
+            if not content and not filename:
+                continue
+            if len(content) > self.max_attachment_bytes:
+                raise ValidationError(f"{filename}: file too large")
+            name = sanitize_filename(filename)
+            stem, dot, ext = name.rpartition(".")
+            if not dot:
+                stem, ext = name, ""
+            n = 1
+            while (adir / name).exists():
+                n += 1
+                name = f"{stem}-{n}{dot}{ext}"
+            adir.mkdir(parents=True, exist_ok=True)
+            (adir / name).write_bytes(content)
+            out.append({
+                "name": name,
+                "file": f"attachments/{cid}/{name}",
+                "mime": mimetypes.guess_type(name)[0] or "application/octet-stream",
+                "size": len(content),
+            })
+        return out
+
+    def _require_task(self, task_id: str) -> None:
+        if not self.task_path(task_id).exists():
+            raise NotFound(task_id)
+
+    def add_comment(self, task_id: str, body: str,
+                    files: Iterable[tuple[str, bytes]] = ()) -> tuple[dict[str, Any], str | None]:
+        import secrets
+        from datetime import datetime, timezone
+
+        with self.lock:
+            self.refresh()
+            self._require_task(task_id)
+            body = unicodedata.normalize("NFC", (body or "").strip())
+            now = datetime.now(timezone.utc)
+            cid = f"{now:%Y%m%dT%H%M%S}{now.microsecond // 1000:03d}Z-{secrets.token_hex(3)}"
+            atts = self._store_files(task_id, cid, files)
+            if not body and not atts:
+                raise ValidationError("comment is empty")
+            c = {"id": cid, "author": self.author_identity(),
+                 "created_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                 "edited_at": None, "body": body, "attachments": atts}
+            path = self.comment_path(task_id, cid)
+            dump_file(path, c)
+            with self.tx() as db:
+                self._insert_comment(db, task_id, cid, c)
+            paths = [path] + ([self._attachment_dir(task_id, cid)] if atts else [])
+            return c, self._finish(paths, f"task: comment on {task_id}")
+
+    def _own_comment(self, task_id: str, cid: str) -> tuple[Path, dict[str, Any]]:
+        path = self.comment_path(task_id, cid)
+        if not path.is_file():
+            raise NotFound(cid)
+        c = load_file(path)
+        if c.get("author") != self.author_identity():
+            raise PermissionError("only the author can change this comment")
+        return path, c
+
+    def edit_comment(self, task_id: str, cid: str, body: str,
+                     add_files: Iterable[tuple[str, bytes]] = (),
+                     remove: Iterable[str] = ()) -> tuple[dict[str, Any], str | None]:
+        from datetime import datetime, timezone
+
+        with self.lock:
+            self.refresh()
+            path, c = self._own_comment(task_id, cid)
+            remove = set(remove)
+            kept = []
+            for a in c.get("attachments") or []:
+                if a.get("name") in remove:
+                    try:
+                        self.attachment_path(task_id, cid, a["name"]).unlink()
+                    except NotFound:
+                        pass
+                else:
+                    kept.append(a)
+            c["attachments"] = kept + self._store_files(task_id, cid, add_files)
+            c["body"] = unicodedata.normalize("NFC", (body or "").strip())
+            if not c["body"] and not c["attachments"]:
+                raise ValidationError("comment is empty")
+            c["edited_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            dump_file(path, c)
+            with self.tx() as db:
+                self._insert_comment(db, task_id, cid, c)
+            return c, self._finish([path, self._attachment_dir(task_id, cid)],
+                                   f"task: edit comment on {task_id}")
+
+    def delete_comment(self, task_id: str, cid: str) -> str | None:
+        import shutil
+
+        with self.lock:
+            self.refresh()
+            path, _ = self._own_comment(task_id, cid)
+            path.unlink()
+            adir = self._attachment_dir(task_id, cid)
+            if adir.is_dir():
+                shutil.rmtree(adir)
+            with self.tx() as db:
+                db.execute("DELETE FROM comments WHERE project_path=? AND task_id=? AND id=?",
+                           (self.project, task_id, cid))
+            return self._finish([path, adir], f"task: delete comment on {task_id}")
