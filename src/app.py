@@ -205,7 +205,7 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
         task = {"id": "", "title": "", "status": request.args.get("status", "todo"),
                 "assignee": "", "description": "", "tags": [], "blocked_by": []}
         return render_template("task.html", task=task, is_new=True, comments=[],
-                               all_ids=[t["id"] for t in engine.list_tasks()],
+                               candidates=engine.list_tasks(),
                                all_tags=engine.all_tags())
 
     @app.post("/task")
@@ -224,7 +224,7 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
         task = engine.get_task(task_id)
         return render_template("task.html", task=task, is_new=False,
                                comments=engine.get_comments(task_id),
-                               all_ids=[t["id"] for t in engine.list_tasks() if t["id"] != task_id],
+                               candidates=[t for t in engine.list_tasks() if t["id"] != task_id],
                                all_tags=engine.all_tags(), me=engine.author_identity(),
                                inline_images=INLINE_IMAGES)
 

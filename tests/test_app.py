@@ -89,3 +89,15 @@ def test_sync_endpoints_without_remote(client):
 def test_api_tags_counts(client):
     assert {t["tag"]: t["count"] for t in client.get("/api/tags").get_json()} == \
         {"ui": 1, "דחוף": 1, "api": 1}
+
+
+def test_unblock_by_unchecking_all(client):
+    html = client.get("/task/TKT-102").get_data(as_text=True)
+    assert re.search(r'type="checkbox" name="blocked_by" value="TKT-101" checked', html)
+    # unchecked checkboxes send nothing -> the blocker is removed
+    r = post(client, "/task/TKT-102", data={"title": "Second", "status": "todo"})
+    assert r.status_code == 302
+    assert client.eng.get_task("TKT-102")["blocked_by"] == []
+    assert client.eng.get_task("TKT-101")["blocks"] == []
+    html = client.get("/task/TKT-102").get_data(as_text=True)
+    assert "checked" not in re.search(r'<fieldset class="blockers">.*?</fieldset>', html, re.S).group(0)

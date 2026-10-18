@@ -210,6 +210,9 @@ msgstr ""
 msgid "Add tag, press Enter"
 msgstr ""
 
+msgid "No other tasks."
+msgstr ""
+
 msgid "Description"
 msgstr ""
 

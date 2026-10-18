@@ -40,11 +40,19 @@
       </div>
       <datalist id="tag-suggestions">{% for t in all_tags %}<option value="{{ t.tag }}">{% endfor %}</datalist>
     </label>
-    <label>{{ _('Blocked by') }}
-      <select name="blocked_by" multiple size="{{ [all_ids|length, 5]|min or 1 }}">
-        {% for i in all_ids %}<option value="{{ i }}" dir="ltr" {% if i in task.blocked_by %}selected{% endif %}>{{ i }}</option>{% endfor %}
-      </select>
-    </label>
+    <fieldset class="blockers">
+      <legend>{{ _('Blocked by') }}</legend>
+      {% set checked = candidates|selectattr('id', 'in', task.blocked_by)|list %}
+      {% set unchecked = candidates|rejectattr('id', 'in', task.blocked_by)|list %}
+      {% for t in checked + unchecked %}
+        <label class="check">
+          <input type="checkbox" name="blocked_by" value="{{ t.id }}" {% if t.id in task.blocked_by %}checked{% endif %}>
+          <bdi dir="ltr" class="id">{{ t.id }}</bdi> <span dir="auto">{{ t.title }}</span>
+        </label>
+      {% else %}
+        <span class="muted">{{ _('No other tasks.') }}</span>
+      {% endfor %}
+    </fieldset>
     <label>{{ _('Description') }}
       <textarea name="description" rows="8"
         {% if task.lang %}lang="{{ task.lang }}" dir="{{ 'rtl' if task.lang == 'he' else 'ltr' }}"{% else %}dir="auto"{% endif %}>{{ task.description }}</textarea>
