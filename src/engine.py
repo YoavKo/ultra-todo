@@ -52,6 +52,16 @@ class GitError(EngineError):
     pass
 
 
+class SyncError(EngineError):
+    """A sync operation that needs user action. ``code`` is stable for i18n."""
+
+    def __init__(self, code: str, detail: str = "", files: list[str] | None = None):
+        super().__init__(detail or code)
+        self.code = code
+        self.detail = detail
+        self.files = files or []
+
+
 # --------------------------------------------------------------------------
 # text helpers
 # --------------------------------------------------------------------------
@@ -814,3 +824,94 @@ class Engine:
                 db.execute("DELETE FROM comments WHERE project_path=? AND task_id=? AND id=?",
                            (self.project, task_id, cid))
             return self._finish([path, adir], f"task: delete comment on {task_id}")
+
+    # ---- sync: Update (pull) / Save work (commit + push) -------------
+    def _upstream(self) -> str | None:
+        p = run_git(self.root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}",
+                    check=False)
+        return p.stdout.strip() if p.returncode == 0 else None
+
+    def _ahead_behind(self) -> tuple[int, int]:
+        p = run_git(self.root, "rev-list", "--left-right", "--count", "HEAD...@{u}", check=False)
+        if p.returncode != 0:
+            return 0, 0
+        a, b = p.stdout.split()
+        return int(a), int(b)
+
+    def _unmerged(self) -> list[str]:
+        p = run_git(self.root, "diff", "--name-only", "--diff-filter=U", check=False)
+        return [x for x in p.stdout.splitlines() if x]
+
+    def sync_status(self) -> dict[str, Any]:
+        with self.lock:
+            p = run_git(self.root, "symbolic-ref", "--short", "-q", "HEAD", check=False)
+            branch = p.stdout.strip() or self.head()[:8]
+            upstream = self._upstream()
+            ahead, behind = self._ahead_behind() if upstream else (0, 0)
+            remotes = run_git(self.root, "remote", check=False).stdout.split()
+            return {"branch": branch, "upstream": upstream, "ahead": ahead,
+                    "behind": behind, "changes": len(self.dirty_files()),
+                    "has_remote": bool(remotes)}
+
+    def pull(self, rebase: bool = False) -> Summary:
+        """Fetch + fast-forward (or rebase), then refresh the index from the diff."""
+        with self.lock:
+            if not self._upstream():
+                raise SyncError("no_upstream")
+            run_git(self.root, "fetch", "--quiet", timeout=120)
+            ahead, behind = self._ahead_behind()
+            if behind:
+                if ahead and not rebase:
+                    raise SyncError("diverged", f"ahead {ahead}, behind {behind}")
+                if ahead:
+                    p = run_git(self.root, "rebase", "--autostash", "@{u}", check=False)
+                    if p.returncode != 0:
+                        files = self._unmerged()
+                        run_git(self.root, "rebase", "--abort", check=False)
+                        raise SyncError("conflict", (p.stderr or p.stdout).strip(), files)
+                else:
+                    p = run_git(self.root, "merge", "--ff-only", "--autostash", "@{u}",
+                                check=False)
+                    if p.returncode != 0:
+                        raise SyncError("failed", (p.stderr or p.stdout).strip(),
+                                        self._unmerged())
+                files = self._unmerged()
+                if files:  # re-applying local edits conflicted; stash is kept by git
+                    raise SyncError("stash_conflict", "", files)
+            return self.refresh()
+
+    def save_work(self, message: str | None = None,
+                  set_upstream: bool = False) -> dict[str, Any]:
+        """Commit only .todo/ changes, then push. Never force-pushes."""
+        with self.lock:
+            committed = False
+            if self.dirty_files():
+                run_git(self.root, "add", "-A", "--", TODO_DIR)
+                names = run_git(self.root, "diff", "--cached", "--name-only", "--",
+                                TASKS_REL).stdout.splitlines()
+                ids = {c[1] for c in map(classify_path, names) if c}
+                message = (message or "").strip() or f"tasks: update {len(ids)} task(s)"
+                run_git(self.root, "commit", "-q", "-m", message, "--", TODO_DIR)
+                committed = True
+            self.record_state()
+
+            pushed = False
+            if not self._upstream():
+                if not run_git(self.root, "remote", check=False).stdout.split():
+                    raise SyncError("no_remote")
+                if not set_upstream:
+                    raise SyncError("no_upstream")
+                remote = "origin" if "origin" in run_git(
+                    self.root, "remote").stdout.split() else run_git(
+                    self.root, "remote").stdout.split()[0]
+                p = run_git(self.root, "push", "-u", remote, "HEAD", check=False, timeout=120)
+                if p.returncode != 0:
+                    raise SyncError("push_failed", p.stderr.strip())
+                pushed = True
+            elif self._ahead_behind()[0]:
+                p = run_git(self.root, "push", check=False, timeout=120)
+                if p.returncode != 0:
+                    rejected = "rejected" in p.stderr or "fetch first" in p.stderr
+                    raise SyncError("rejected" if rejected else "push_failed", p.stderr.strip())
+                pushed = True
+            return {"committed": committed, "pushed": pushed, "message": message}
