@@ -459,7 +459,11 @@ def main(argv=None) -> None:
             raise SystemExit(f"error: {e}")
     ap = argparse.ArgumentParser(
         prog="ultra-todo", description="Local GitOps task manager",
-        epilog="also: 'ultra-todo ls' lists known repos, 'ultra-todo open NAME|NUMBER' opens one, 'ultra-todo forget NAME|NUMBER,...' removes some")
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="also:\n"
+               "  • ultra-todo ls                         list known repos (numbered)\n"
+               "  • ultra-todo open NAME|NUMBER [flags]   serve a known repo\n"
+               "  • ultra-todo forget NAME|NUMBER,...     remove repos from the list")
     ap.add_argument("--target", required=True, help="path of the git repository to manage")
     ap.add_argument("--lang", choices=SUPPORTED, help="default UI language")
     ap.add_argument("--host", default="127.0.0.1")
