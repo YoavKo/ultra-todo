@@ -67,9 +67,9 @@ _utd() {
                 attach|--attach) compopt -o filenames 2>/dev/null; COMPREPLY=($(compgen -f -- "$cur")); return ;;
             esac
             if [ "$COMP_CWORD" -eq 3 ] && [[ "$cur" != -* ]]; then
-                COMPREPLY=($(compgen -W "edit comment status start done reopen priority attach detach blocked block-by remove" -- "$cur"))
+                COMPREPLY=($(compgen -W "edit comment status start done reopen priority attach detach open blocked block-by remove" -- "$cur"))
             else
-                COMPREPLY=($(compgen -W "-e -c -m -s -p -a -d -b -bb -rb -rbb --json -h" -- "$cur"))
+                COMPREPLY=($(compgen -W "-e -c -m -s -p -a -d -o --path -b -bb -rb -rbb --json -h" -- "$cur"))
             fi ;;
     esac
 }

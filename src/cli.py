@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 import repos
-from engine import (PRIORITIES, STATUSES, Engine, EngineError, NotFound, SyncError,
+from engine import (DESCRIPTION, PRIORITIES, STATUSES, Engine, EngineError, NotFound, SyncError,
                     ValidationError, clean_task, fold, load_file, run_git)
 
 # first words that are not a REPO (handled by app.main)
@@ -499,6 +499,56 @@ def cmd_attach(engine: Engine, tid: str, paths: list[str]) -> None:
     print(f"{tid}: attached {', '.join(names)}")
 
 
+def all_attachments(engine: Engine, tid: str) -> list[tuple[str, str, dict]]:
+    """(owner, label, attachment) for the description and every comment of a ticket."""
+    out = [(DESCRIPTION, "description", a) for a in engine.get_task(tid)["attachments"]]
+    for c in engine.get_comments(tid):
+        out += [(c["id"], f"comment {c['id']}", a) for a in c["attachments"]]
+    return out
+
+
+def launch(path: Path) -> None:
+    """Open a file with the system's default application, without waiting for it."""
+    if sys.platform == "win32":
+        os.startfile(path)  # type: ignore[attr-defined]
+        return
+    opener = "open" if sys.platform == "darwin" else "xdg-open"
+    if not shutil.which(opener):
+        fail(f"cannot open files here: {opener} not found (use --path to print the location)")
+    subprocess.Popen([opener, str(path)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def cmd_open(engine: Engine, tid: str, names: list[str], path_only: bool) -> None:
+    """Open attachments (description or comments) with the default application."""
+    have = all_attachments(engine, tid)
+    if not have:
+        fail(f"{tid} has no attachments")
+    if not names:
+        if len(have) != 1:
+            fail(f"{tid} has {len(have)} attachments; name one: "
+                 + ", ".join(sorted({a['name'] for _, _, a in have})))
+        names = [have[0][2]["name"]]
+    targets = []
+    for name in names:
+        owner, _, bare = name.partition("/")
+        hits = [(o, l) for o, l, att in have if att["name"] == name] if not bare else \
+               [(o, l) for o, l, att in have if o == owner and att["name"] == bare]
+        if not hits:
+            fail(f"{tid} has no attachment {name!r} (it has: "
+                 + ", ".join(sorted({att['name'] for _, _, att in have})) + ")")
+        if len(hits) > 1:
+            fail(f"several attachments are called {name!r}; say which one: "
+                 + ", ".join(f"{o}/{name}" for o, _ in hits))
+        targets.append(engine.attachment_path(tid, hits[0][0], bare or name))
+    for path in targets:
+        if path_only:
+            print(path)
+        else:
+            launch(path)
+            print(f"opening {path.relative_to(engine.root)}")
+
+
 def cmd_detach(engine: Engine, tid: str, names: list[str]) -> None:
     have = {a["name"] for a in engine.get_task(tid)["attachments"]}
     missing = [n for n in names if n not in have]
@@ -533,7 +583,7 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
     ap = argparse.ArgumentParser(
         prog=f"{p} REPO ID", formatter_class=argparse.RawDescriptionHelpFormatter,
         usage=f"{p} REPO ID [edit | comment | status VALUE | start | done | reopen | priority VALUE | "
-              "attach FILES | detach NAMES | blocked IDS | block-by IDS | remove blocked IDS | "
+              "attach FILES | detach NAMES | open [NAMES] | blocked IDS | block-by IDS | remove blocked IDS | "
               "remove block-by IDS] [flags]",
         description="Show a ticket, edit it, comment on it, set its priority, or change its dependencies.",
         epilog="examples:\n"
@@ -547,6 +597,8 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
                f"  • {p} . TKT-101 priority high   set the priority (high | medium | low; -p h also works)\n"
                f"  • {p} . TKT-101 attach shot.png log.txt   attach files to the description (-a)\n"
                f"  • {p} . TKT-101 detach shot.png           remove an attachment (-d)\n"
+               f"  • {p} . TKT-101 open shot.png             open an attachment (description or comment) in the\n"
+               "      default application (xdg-open / open / start); -o works too; --path prints the location\n"
                f"  • {p} . TKT-101 blocked 104     TKT-101 blocks TKT-104\n"
                f"  • {p} . TKT-104 block-by 101    TKT-104 is blocked by TKT-101 (same link)\n"
                f"  • {p} . TKT-101 remove blocked 104       remove that link\n"
@@ -566,6 +618,9 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
     ap.add_argument("-s", "--status", metavar="VALUE", help="set the status: todo | doing | done | blocked")
     ap.add_argument("-a", "--attach", nargs="+", metavar="FILE", help="attach files to the description")
     ap.add_argument("-d", "--detach", nargs="+", metavar="NAME", help="remove description attachments")
+    ap.add_argument("-o", "--open", nargs="*", metavar="NAME", dest="open_files",
+                    help="open attachments (description or comments) with the default application")
+    ap.add_argument("--path", action="store_true", help="with open: print the file path instead")
     for flag, dest in (("-b", "blocked"), ("-bb", "block_by"),
                        ("-rb", "remove_blocked"), ("-rbb", "remove_block_by")):
         ap.add_argument(flag, "--" + dest.replace("_", "-"), dest=dest, nargs="+", metavar="ID")
@@ -588,6 +643,8 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
                 ap.error("status needs one value: todo, doing, done or blocked"
                          if head == "status" else f"{head} takes no arguments")
             ops.append(("status", value))
+        elif head == "open":
+            ops.append(("open", ids))
         elif head in ("attach", "detach"):
             if not ids:
                 ap.error(f"{head} needs at least one " + ("file" if head == "attach" else "attachment name"))
@@ -605,6 +662,8 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
         ops.append(("priority", a.priority))
     if a.status is not None:
         ops.append(("status", a.status))
+    if a.open_files is not None:
+        ops.append(("open", a.open_files))
     if a.attach:
         ops.append(("attach", a.attach))
     if a.detach:
@@ -613,7 +672,7 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
         ("blocked", False, a.blocked), ("block-by", False, a.block_by),
         ("blocked", True, a.remove_blocked), ("block-by", True, a.remove_block_by)) if ids]
     if len(ops) > 1 and {o[0] for o in ops} != {"dep"}:
-        ap.error("choose one of edit, comment, status, priority, attach, detach or dependency changes")
+        ap.error("choose one of edit, comment, status, priority, attach, detach, open or dependency changes")
     if any(o[0] == "dep" and not o[3] for o in ops):
         ap.error("give at least one ticket id")
     if a.message is not None and not any(o[0] == "comment" for o in ops):
@@ -633,6 +692,8 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
         cmd_priority(engine, tid, ops[0][1], ap)
     elif ops[0][0] == "status":
         cmd_status(engine, tid, ops[0][1], ap)
+    elif ops[0][0] == "open":
+        cmd_open(engine, tid, ops[0][1], a.path)
     elif ops[0][0] == "attach":
         cmd_attach(engine, tid, ops[0][1])
     elif ops[0][0] == "detach":

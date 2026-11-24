@@ -351,3 +351,52 @@ def test_migrate_command_and_info_hint(proj, capsys):
     flat.write_text(json.dumps({"id": "OLD-1", "title": "other"}))
     with pytest.raises(SystemExit, match="different contents.*OLD-1"):
         proj("migrate")
+
+
+def test_open_attachments(proj, capsys, tmp_path, monkeypatch):
+    opened = []
+    monkeypatch.setattr(cli, "launch", lambda path: opened.append(path))
+    shot, note = tmp_path / "shot.png", tmp_path / "note.txt"
+    shot.write_bytes(b"\x89PNG")
+    note.write_text("hi")
+    with pytest.raises(SystemExit, match="no attachments"):
+        proj("TKT-101", "open")
+    proj("TKT-101", "attach", str(shot))
+    c, _ = __import__("engine").Engine(proj.repo, db_path=proj.db).add_comment(
+        "TKT-101", "see file", files=[("note.txt", b"in a comment"), ("shot.png", b"other")])
+    out(capsys)
+    proj("TKT-101", "open", "note.txt")  # found in a comment
+    assert opened == [proj.repo / f".todo/tasks/TKT-101/attachments/{c['id']}/note.txt"]
+    assert "opening .todo/tasks/TKT-101/attachments/" in out(capsys)
+    with pytest.raises(SystemExit, match="several attachments.*description/shot.png"):
+        proj("TKT-101", "open", "shot.png")  # in the description and in the comment
+    opened.clear()
+    proj("TKT-101", "-o", "description/shot.png", f"{c['id']}/shot.png")
+    assert [p.name for p in opened] == ["shot.png", "shot.png"] and opened[0] != opened[1]
+    out(capsys)
+    proj("TKT-101", "open", "note.txt", "--path")
+    assert out(capsys).strip().endswith(f"{c['id']}/note.txt") and len(opened) == 2  # printed, not launched
+    with pytest.raises(SystemExit, match="no attachment 'ghost'.*note.txt"):
+        proj("TKT-101", "open", "ghost")
+    with pytest.raises(SystemExit, match="has 2 attachments|has 3 attachments"):
+        proj("TKT-101", "open")  # several: must name one
+    proj("TKT-102", "attach", str(note))
+    out(capsys)
+    opened.clear()
+    proj("TKT-102", "open")  # a single attachment needs no name
+    assert [p.name for p in opened] == ["note.txt"]
+
+
+def test_launch_without_opener(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli.sys, "platform", "linux")
+    monkeypatch.setattr(cli.shutil, "which", lambda name: None)
+    with pytest.raises(SystemExit, match="xdg-open not found.*--path"):
+        cli.launch(tmp_path / "x")
+    calls = []
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda cmd, **kw: calls.append(cmd))
+    cli.launch(tmp_path / "x")
+    assert calls == [["xdg-open", str(tmp_path / "x")]]
+    monkeypatch.setattr(cli.sys, "platform", "darwin")
+    cli.launch(tmp_path / "y")
+    assert calls[-1][0] == "open"

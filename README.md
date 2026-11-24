@@ -123,6 +123,7 @@ utd . TKT-101 priority high              # or -p high (h, m, l work too)
 utd . TKT-101 edit                       # or -e: open the ticket file in $VISUAL / $EDITOR; validated on exit
 utd . TKT-101 comment -m "text"          # or -c; without -m: $EDITOR, or stdin (echo hi | utd . TKT-101 -c)
 utd . TKT-101 attach shot.png log.txt    # or -a: attach files to the description; detach NAME (-d) removes one
+utd . TKT-101 open shot.png              # or -o: open an attachment (description or comment) in the default app
 utd . new "Crash" --attach trace.txt     # a new ticket with files attached
 utd . TKT-101 blocked 104 105            # or -b: TKT-101 blocks 104 and 105
 utd . TKT-104 block-by 101               # or -bb: TKT-104 is blocked by 101 (the same link, seen from the other side)
@@ -146,6 +147,7 @@ Details:
 - Dependency changes refuse cycles and self-links (exit code 1, nothing written). A `remove block-by` also works on ids that no longer exist.
 - `save` commits whatever changed under `.todo/` and then pushes; if the branch has no upstream it has already committed and tells you to rerun with `--set-upstream`. `pull` stops cleanly on conflicts, like the app.
 - Colours follow the terminal: off when piped, off with `NO_COLOR`, forced with `CLICOLOR_FORCE=1`.
+- `open` uses `xdg-open` (Linux), `open` (macOS) or the Windows default; `--path` prints the file location instead (SSH, scripts). With one attachment no name is needed; if the description and a comment have a file of the same name, say `description/NAME` or `COMMENT-ID/NAME`.
 - `utd . migrate` moves tickets from the old flat `ID.json5` layout to `ID/main.json5` (see [File formats](#file-formats)); nothing is committed until `save`.
 - Per-command help: `utd . ls -h`, `board -h`, `new -h`, `next -h`, `pull -h`, `save -h`, `utd . TKT-1 -h`.
 - Breaking change: `utd` alone and `utd PATH` used to serve a repo; that is now `utd . serve` / `utd PATH serve` (`utd open NAME` and `ultra-todo --target PATH` are unchanged).
