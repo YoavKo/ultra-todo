@@ -20,8 +20,8 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 - **Comments** per task: newest first, author and time stamped by the server, editable, with image/file attachments stored next to the task
 - **Update** button: `git pull --ff-only`, then the index is refreshed from the diff (rebase offered if the branch diverged; aborted cleanly on conflict)
 - **Save work** button: commits only `.todo/` changes (editable message) and pushes; never force-pushes, never stages files outside `.todo/`
-- **Several repos** – serve many at once (free ports picked automatically); `ls` / `open` / `forget` manage the list of known repos, with a `utd` bash shortcut and tab completion
-- **Terminal-first too** – `utd . ls`, `utd . board`, `utd . TKT-101 done`, `utd . new "…"`, `utd . save`: browse and change tickets, comment, set dependencies and sync without opening the browser
+- **Several repos** – serve many at once (free ports picked automatically); `ls` / `open` / `forget` manage the list of known repos
+- **Terminal-first too** – the `utd` shortcut (with tab completion): `utd . ls`, `utd . board`, `utd . TKT-101 done`, `utd . new "…"`, `utd . save`: browse and change tickets, comment, set dependencies and sync without opening the browser
 - Hebrew + English: translated UI, RTL layout, `dir="auto"` for mixed-language content; language set with `--lang` and/or the in-app toggle
 
 ## Screenshots
@@ -86,19 +86,6 @@ ultra-todo forget 3,5               # remove repos from the list (or: forget old
 
 ![ls and open](docs/screenshots/cli-open.png)
 
-![forget](docs/screenshots/cli-forget.png)
-
-Per-command help:
-
-![open -h and forget -h](docs/screenshots/cli-help.png)
-
-`ls` output:
-
-```
-1  2026-10-19 01:40  [2 open, 1 done]  my-repo     /home/me/work/my-repo
-2  2026-10-17 18:02  [0 open, 7 done]  old-thing   /home/me/old-thing  (missing)
-```
-
 - **number** – use it with `open` / `forget`. Numbers follow the `ls` order, so they shift when you open another repo (`open 1` = the last one you used).
 - **last opened** – local time; `-` for repos imported from the cache that haven't been opened since.
 - **[x open, y done]** – open = todo, in progress and blocked. Each repo's index is refreshed first, so counts include `git pull`s and uncommitted edits made outside ultra-todo.
@@ -124,17 +111,7 @@ utd my-repo ls --status todo  # by known repo name (or number)
 utd . serve --port 9000       # serve the web UI (what `utd` alone used to do)
 ```
 
-List and project info:
-
-![Ticket list and project info](docs/screenshots/cli-tickets.png)
-
-The board:
-
-![Kanban board in the terminal](docs/screenshots/cli-board.png)
-
-A ticket, with its blockers, description and comments:
-
-![A ticket](docs/screenshots/cli-ticket.png)
+(What the board, list and ticket views look like: see [Screenshots](#screenshots).)
 
 Change tickets (every change is a file edit under `.todo/`, nothing is committed until `save`):
 
@@ -180,13 +157,7 @@ source /path/to/ultra-todo/shell/utd.bash
 
 (If you pasted the old `utd` function there, replace it with this line.) It needs `uv` on the `PATH`.
 
-```bash
-utd -h                       # every command, with flags
-utd ls                       # known repos
-utd open some-repo           # serve a known repo by name; Tab completes names
-utd forget 3,5               # by numbers or names; Tab completes names, also after a comma
-utd . serve --lang he        # serve the current repo
-```
+`utd -h` lists every command with its flags.
 
 Tab completion covers the commands, repo names and directories, then per repo: the actions, ticket ids
 (`utd . TK<Tab>`), values after `status` / `priority` / `-p` / `-s`, ids after `blocked` / `block-by` /
