@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ultra-todo 0.1.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-18 19:39+0300\n"
+"POT-Creation-Date: 2026-11-25 01:24+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: he\n"
@@ -290,6 +290,9 @@ msgstr "אין משימות אחרות."
 
 msgid "Description"
 msgstr "תיאור"
+
+msgid "Attachments"
+msgstr "קבצים מצורפים"
 
 msgid "Create"
 msgstr "יצירה"

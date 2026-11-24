@@ -58,7 +58,7 @@
   </section>
   {% endif %}
   <form method="post" action="{{ url_for('create_task') if is_new else url_for('update_task', task_id=task.id) }}"
-        class="stack" id="task-form">
+        class="stack" id="task-form" enctype="multipart/form-data" data-paste-files>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if is_new %}
     <label>{{ _('ID') }} <small class="muted">({{ _('optional, generated if empty') }})</small>
@@ -117,6 +117,25 @@
       <textarea name="description" rows="8"
         {% if task.lang %}lang="{{ task.lang }}" dir="{{ 'rtl' if task.lang == 'he' else 'ltr' }}"{% else %}dir="auto"{% endif %}>{{ task.description }}</textarea>
     </label>
+    <div class="desc-files">
+      <span>{{ _('Attachments') }}</span>
+      {% if task.attachments %}
+      <div class="attachments">
+        {% for a in task.attachments %}
+          {% set href = url_for('attachment', task_id=task.id, cid='description', name=a.name) %}
+          <div class="att">
+            {% if a.mime in inline_images %}
+              <a href="{{ href }}" target="_blank" class="thumb"><img src="{{ href }}" alt="{{ a.name }}" loading="lazy"></a>
+            {% else %}
+              <a href="{{ href }}" class="file">📎 <bdi>{{ a.name }}</bdi> <small class="muted">{{ (a.size / 1024)|round(1) }} KB</small></a>
+            {% endif %}
+            <label class="check"><input type="checkbox" name="remove" value="{{ a.name }}"> {{ _('Remove') }}</label>
+          </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <input type="file" name="files" multiple aria-label="{{ _('Attachments') }}">
+    </div>
     <div class="row">
       <button class="btn primary">{{ _('Create') if is_new else _('Save') }}</button>
       <a class="btn ghost" href="{{ url_for('index') }}">{{ _('Cancel') }}</a>

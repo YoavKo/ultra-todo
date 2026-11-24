@@ -171,3 +171,27 @@ def test_bind_socket_picks_next_free_port():
             bind_socket("127.0.0.1", first.getsockname()[1])
     finally:
         first.close(); second.close()
+
+
+def test_description_attachments_in_the_task_form(client):
+    import io
+    r = post(client, "/task/TKT-101", content_type="multipart/form-data",
+             data={"title": "שלום עולם", "status": "todo", "description": "see file",
+                   "csrf_token": client.token,
+                   "files": [(io.BytesIO(b"\x89PNG"), "shot.png"), (io.BytesIO(b"<svg/>"), "x.svg")]})
+    assert r.status_code == 302
+    html = client.get("/task/TKT-101").get_data(as_text=True)
+    assert "/task/TKT-101/attachment/description/shot.png" in html and "x.svg" in html
+    png = client.get("/task/TKT-101/attachment/description/shot.png")
+    assert png.mimetype == "image/png"
+    svg = client.get("/task/TKT-101/attachment/description/x.svg")
+    assert svg.mimetype == "application/octet-stream" and "attachment" in svg.headers["Content-Disposition"]
+    assert client.get("/task/TKT-101/attachment/description/..%2Fmain.json5").status_code == 404
+    post(client, "/task/TKT-101", content_type="multipart/form-data",
+         data={"title": "שלום עולם", "status": "todo", "csrf_token": client.token, "remove": "x.svg"})
+    assert [a["name"] for a in client.eng.get_task("TKT-101")["attachments"]] == ["shot.png"]
+    r = post(client, "/task", content_type="multipart/form-data",
+             data={"title": "n", "status": "todo", "id": "NEW-9", "csrf_token": client.token,
+                   "files": [(io.BytesIO(b"hi"), "n.txt")]})
+    assert r.status_code == 302
+    assert [a["name"] for a in client.eng.get_task("NEW-9")["attachments"]] == ["n.txt"]

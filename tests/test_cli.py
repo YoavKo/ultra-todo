@@ -303,3 +303,31 @@ def test_save_and_pull(remote_proj, capsys):
     go(alice, "pull", "--rebase")
     go(alice, "save")
     assert "pushed" in out(capsys)
+
+
+def test_attach_and_detach(proj, capsys, tmp_path):
+    shot, note = tmp_path / "shot.png", tmp_path / "note.txt"
+    shot.write_bytes(b"\x89PNG")
+    note.write_text("hi")
+    proj("TKT-101", "attach", str(shot), str(note))
+    assert "TKT-101: attached shot.png, note.txt" in out(capsys)
+    assert (proj.repo / ".todo/tasks/TKT-101/attachments/description/shot.png").exists()
+    proj("TKT-101")
+    text = out(capsys)
+    assert "Attachments (2)" in text and "shot.png" in text
+    assert ".todo/tasks/TKT-101/attachments/description/note.txt" in text
+    proj("TKT-101", "attach", str(note))
+    assert "attached note-2.txt" in out(capsys)  # no overwrite
+    proj("TKT-101", "-d", "note.txt", "note-2.txt")
+    assert "removed note.txt, note-2.txt" in out(capsys)
+    proj("TKT-101", "--json")
+    assert [a["name"] for a in json.loads(out(capsys))["attachments"]] == ["shot.png"]
+    with pytest.raises(SystemExit, match="no attachment 'ghost.txt'.*shot.png"):
+        proj("TKT-101", "detach", "ghost.txt")
+    with pytest.raises(SystemExit, match="not a file"):
+        proj("TKT-101", "attach", str(tmp_path / "nope"))
+    with pytest.raises(SystemExit):
+        proj("TKT-101", "attach")
+    proj("new", "With file", "--attach", str(note))
+    assert "created TKT-104" in out(capsys)
+    assert [a["name"] for a in tasks(proj)["TKT-104"]["attachments"]] == ["note.txt"]

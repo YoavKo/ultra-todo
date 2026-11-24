@@ -153,3 +153,45 @@ def test_legacy_comment_ids_still_work(eng, repo):
     assert eng.comment_path("TKT-101", old) == p
     with pytest.raises(ValidationError):
         eng.comment_path("TKT-101", "../x")
+
+
+def test_description_attachments(eng, repo):
+    t, _ = eng.save_task({"id": "TKT-101"}, files=[("../shot.png", b"\x89PNG"), ("a.txt", b"hi")])
+    assert [a["name"] for a in t["attachments"]] == ["shot.png", "a.txt"]
+    assert t["attachments"][0]["file"] == "attachments/description/shot.png"
+    base = repo / ".todo/tasks/TKT-101/attachments/description"
+    assert (base / "shot.png").read_bytes() == b"\x89PNG"
+    assert eng.attachment_path("TKT-101", "description", "a.txt").read_bytes() == b"hi"
+    with pytest.raises(NotFound):
+        eng.attachment_path("TKT-101", "description", "../../main.json5")
+    # listed in the file, survives a re-index and unrelated saves
+    raw = json.loads((repo / ".todo/tasks/TKT-101/main.json5").read_text())
+    assert [a["name"] for a in raw["attachments"]] == ["shot.png", "a.txt"]
+    eng.save_task({"id": "TKT-101", "title": "renamed"})
+    assert len(eng.get_task("TKT-101")["attachments"]) == 2
+    eng.db.execute("DELETE FROM projects")
+    eng.refresh()
+    assert [a["name"] for a in eng.get_task("TKT-101")["attachments"]] == ["shot.png", "a.txt"]
+    # same name twice, size limit, and removal (file and entry)
+    t, _ = eng.save_task({"id": "TKT-101"}, files=[("a.txt", b"2")])
+    assert [a["name"] for a in t["attachments"]][-1] == "a-2.txt"
+    eng.max_attachment_bytes = 1
+    with pytest.raises(ValidationError):
+        eng.save_task({"id": "TKT-101"}, files=[("big", b"12")])
+    t, _ = eng.save_task({"id": "TKT-101"}, remove_files=["shot.png", "a.txt", "a-2.txt"])
+    assert t["attachments"] == [] and not (base / "shot.png").exists()
+    assert "attachments" not in json.loads((repo / ".todo/tasks/TKT-101/main.json5").read_text())
+    # a caller cannot forge the list
+    t, _ = eng.save_task({"id": "TKT-101", "attachments": [{"name": "x"}]})
+    assert t["attachments"] == []
+    # created with files; deleted together with its dir
+    t, _ = eng.save_task({"id": "NEW-1", "title": "with file"}, create=True, files=[("f.txt", b"x")])
+    assert (repo / ".todo/tasks/NEW-1/attachments/description/f.txt").exists()
+    eng.delete_task("NEW-1")
+    assert not (repo / ".todo/tasks/NEW-1").exists()
+
+
+def test_invalid_task_leaves_no_attachment_files(eng, repo):
+    with pytest.raises(ValidationError):
+        eng.save_task({"id": "BAD-1", "title": ""}, create=True, files=[("f.txt", b"x")])
+    assert not (repo / ".todo/tasks/BAD-1").exists()

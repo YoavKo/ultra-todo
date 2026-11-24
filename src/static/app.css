@@ -103,7 +103,9 @@ table.tasks th, table.tasks td { padding: 8px 10px; border-block-end: 1px solid 
 .attachments { display: flex; flex-wrap: wrap; gap: 8px; }
 .thumb img { max-inline-size: 160px; max-block-size: 120px; border-radius: 6px; border: 1px solid var(--line); }
 .file { padding: 4px 8px; background: var(--chip); border-radius: 6px; }
-.composer.drop { outline: 2px dashed var(--accent); }
+.composer.drop, #task-form.drop { outline: 2px dashed var(--accent); }
+.desc-files { display: flex; flex-direction: column; gap: 6px; }
+.desc-files .att { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
 
 dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
   color: var(--fg); min-inline-size: min(440px, 90vw); }

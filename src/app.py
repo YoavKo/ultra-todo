@@ -232,7 +232,7 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
         data = form_task(request.form)
         if request.form.get("id", "").strip():
             data["id"] = request.form["id"].strip()
-        task, err = engine.save_task(data, create=True)
+        task, err = engine.save_task(data, create=True, files=uploads())
         flash_commit(err)
         flash(_("Task %(id)s created.", id=task["id"]), "success")
         return redirect(url_for("task_view", task_id=task["id"]))
@@ -255,7 +255,8 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
     def update_task(task_id):
         data = form_task(request.form)
         data["id"] = task_id
-        _task, err = engine.save_task(data)
+        _task, err = engine.save_task(data, files=uploads(),
+                                      remove_files=request.form.getlist("remove"))
         flash_commit(err)
         flash(_("Task saved."), "success")
         return redirect(url_for("task_view", task_id=task_id))

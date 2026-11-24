@@ -22,12 +22,13 @@ import platformdirs
 
 log = logging.getLogger("ultra-todo")
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 STATUSES = ("todo", "in_progress", "done", "blocked")
 PRIORITIES = ("high", "medium", "low")  # in sort order
 DEFAULT_PRIORITY = "medium"
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 MAX_TAG_LEN = 40
+DESCRIPTION = "description"  # attachment owner of the ticket itself (comments use their id)
 TODO_DIR = ".todo"
 TASKS_REL = ".todo/tasks"
 
@@ -189,7 +190,21 @@ def clean_task(raw: dict[str, Any], task_id: str | None = None) -> dict[str, Any
     lang = raw.get("lang")
     if lang:
         task["lang"] = str(lang)
+    atts = clean_attachments(raw.get("attachments"))
+    if atts:  # files attached to the description, stored under attachments/description/
+        task["attachments"] = atts
     return task
+
+
+def clean_attachments(raw: Any) -> list[dict[str, Any]]:
+    out = []
+    for a in raw if isinstance(raw, list) else []:
+        if isinstance(a, dict) and a.get("name"):
+            name = str(a["name"])
+            out.append({"name": name, "file": str(a.get("file") or f"attachments/description/{name}"),
+                        "mime": str(a.get("mime") or "application/octet-stream"),
+                        "size": int(a.get("size") or 0)})
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -224,6 +239,7 @@ CREATE TABLE IF NOT EXISTS projects(
 CREATE TABLE IF NOT EXISTS tasks(
   project_path TEXT, id TEXT, title TEXT, status TEXT, assignee TEXT,
   description TEXT, lang TEXT, search TEXT, priority TEXT, priority_rank INTEGER,
+  attachments TEXT DEFAULT '[]',
   PRIMARY KEY(project_path, id)
 );
 CREATE TABLE IF NOT EXISTS dependencies(
@@ -480,10 +496,12 @@ class Engine:
         search = fold(" ".join([tid, task["title"], task["description"], task["assignee"]]))
         db.execute(
             "INSERT OR REPLACE INTO tasks(project_path,id,title,status,assignee,"
-            "description,lang,search,priority,priority_rank) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "description,lang,search,priority,priority_rank,attachments) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
             (p, tid, task["title"], task["status"], task["assignee"],
              task["description"], task.get("lang"), search, task["priority"],
-             PRIORITIES.index(task["priority"])))
+             PRIORITIES.index(task["priority"]),
+             json.dumps(task.get("attachments") or [], ensure_ascii=False)))
         db.execute("DELETE FROM dependencies WHERE project_path=? AND task_id=?", (p, tid))
         db.executemany("INSERT OR IGNORE INTO dependencies VALUES(?,?,?)",
                        [(p, tid, b) for b in task["blocked_by"]])
@@ -531,6 +549,7 @@ class Engine:
         for t in tasks:
             t.pop("search", None)
             t.pop("priority_rank", None)
+            t["attachments"] = json.loads(t.get("attachments") or "[]")
             t["tags"] = tags.get(t["id"], [])
             t["blocked_by"] = deps.get(t["id"], [])
             t["blocks"] = sorted(blocks.get(t["id"], []))
@@ -662,8 +681,13 @@ class Engine:
         self.record_state()
         return err
 
-    def save_task(self, data: dict[str, Any], create: bool = False) -> tuple[dict[str, Any], str | None]:
-        """Create or update a task. Returns (task, commit_error)."""
+    def save_task(self, data: dict[str, Any], create: bool = False,
+                  files: Iterable[tuple[str, bytes]] = (),
+                  remove_files: Iterable[str] = ()) -> tuple[dict[str, Any], str | None]:
+        """Create or update a task. `files` are attached to the description, `remove_files`
+        are names of its attachments to delete. Returns (task, commit_error)."""
+        files, remove_files = list(files), set(remove_files)
+        data = {k: v for k, v in data.items() if k != "attachments"}  # managed via files only
         with self.lock:
             self.refresh()
             tid = data.get("id") or (self.next_id() if create else None)
@@ -681,13 +705,32 @@ class Engine:
             if not task["title"]:
                 raise ValidationError("title is required")
             self._check_graph(task)
+            touched = [path]
+            if files or remove_files:
+                kept = []
+                for a in task.get("attachments", []):
+                    if a["name"] in remove_files:
+                        try:
+                            self.attachment_path(tid, DESCRIPTION, a["name"]).unlink()
+                        except NotFound:
+                            pass
+                    else:
+                        kept.append(a)
+                atts = kept + self._store_files(tid, DESCRIPTION, files)
+                if atts:
+                    task["attachments"] = atts
+                else:
+                    task.pop("attachments", None)
+                touched.append(self._attachment_dir(tid, DESCRIPTION))
             raw.update(task)  # keep unknown user fields, canonical known ones
             if "lang" not in task:
                 raw.pop("lang", None)
+            if "attachments" not in task:
+                raw.pop("attachments", None)
             dump_file(path, raw)
             with self.tx() as db:
                 self._upsert_task(db, task)
-            err = self._finish([path], f"task: {'create' if create else 'update'} {tid}")
+            err = self._finish(touched, f"task: {'create' if create else 'update'} {tid}")
             return self.get_task(tid), err
 
     def set_status(self, task_id: str, status: str) -> tuple[dict[str, Any], str | None]:
@@ -753,9 +796,11 @@ class Engine:
             raise ValidationError("invalid comment id")
         return self.task_dir(task_id) / "comments" / f"{cid}.json5"
 
-    def _attachment_dir(self, task_id: str, cid: str) -> Path:
-        self.comment_path(task_id, cid)  # validates cid
-        return self.task_dir(task_id) / "attachments" / cid
+    def _attachment_dir(self, task_id: str, owner: str) -> Path:
+        """attachments/<comment id>/ for a comment, attachments/description/ for the ticket itself."""
+        if owner != DESCRIPTION:
+            self.comment_path(task_id, owner)  # validates the comment id
+        return self.task_dir(task_id) / "attachments" / owner
 
     def attachment_path(self, task_id: str, cid: str, name: str) -> Path:
         base = self._attachment_dir(task_id, cid).resolve()
@@ -764,12 +809,12 @@ class Engine:
             raise NotFound(name)
         return p
 
-    def _store_files(self, task_id: str, cid: str,
+    def _store_files(self, task_id: str, owner: str,
                      files: Iterable[tuple[str, bytes]]) -> list[dict[str, Any]]:
         import mimetypes
 
         out = []
-        adir = self._attachment_dir(task_id, cid)
+        adir = self._attachment_dir(task_id, owner)
         for filename, content in files:
             if not content and not filename:
                 continue
@@ -787,7 +832,7 @@ class Engine:
             (adir / name).write_bytes(content)
             out.append({
                 "name": name,
-                "file": f"attachments/{cid}/{name}",
+                "file": f"attachments/{owner}/{name}",
                 "mime": mimetypes.guess_type(name)[0] or "application/octet-stream",
                 "size": len(content),
             })

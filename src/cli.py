@@ -344,6 +344,12 @@ def render_ticket(engine: Engine, t: dict) -> str:
     out.append(paint("file: " + engine.task_path(t["id"]).relative_to(engine.root).as_posix(), "dim"))
     if t["description"].strip():
         out += ["", t["description"].rstrip()]
+    if t["attachments"]:
+        out += ["", paint(f"Attachments ({len(t['attachments'])})", "bold")]
+        for a in t["attachments"]:
+            where = engine.task_dir(t["id"]) / a["file"]
+            out.append(f"  {a['name']}  ({a['size'] / 1024:.1f} KB)  "
+                       + paint(where.relative_to(engine.root).as_posix(), "dim"))
     comments = engine.get_comments(t["id"])
     out += ["", paint(f"Comments ({len(comments)})", "bold")]
     for c in comments:
@@ -446,6 +452,36 @@ def cmd_priority(engine: Engine, tid: str, value: str, ap: argparse.ArgumentPars
     print(f"{tid}: priority {old} → {value}")
 
 
+def read_files(paths: list[str]) -> list[tuple[str, bytes]]:
+    files = []
+    for p in paths:
+        path = Path(p).expanduser()
+        if not path.is_file():
+            fail(f"not a file: {p}")
+        files.append((path.name, path.read_bytes()))
+    return files
+
+
+def cmd_attach(engine: Engine, tid: str, paths: list[str]) -> None:
+    files = read_files(paths)
+    try:
+        task, _ = engine.save_task({"id": tid}, files=files)
+    except ValidationError as e:
+        fail(str(e))
+    names = [a["name"] for a in task["attachments"]][-len(files):]
+    print(f"{tid}: attached {', '.join(names)}")
+
+
+def cmd_detach(engine: Engine, tid: str, names: list[str]) -> None:
+    have = {a["name"] for a in engine.get_task(tid)["attachments"]}
+    missing = [n for n in names if n not in have]
+    if missing:
+        fail(f"{tid} has no attachment {', '.join(map(repr, missing))}"
+             + (f" (it has: {', '.join(sorted(have))})" if have else " (it has none)"))
+    engine.save_task({"id": tid}, remove_files=names)
+    print(f"{tid}: removed {', '.join(names)}")
+
+
 DEP_WORDS = ("blocked", "block-by")
 
 
@@ -470,7 +506,8 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
     ap = argparse.ArgumentParser(
         prog=f"{p} REPO ID", formatter_class=argparse.RawDescriptionHelpFormatter,
         usage=f"{p} REPO ID [edit | comment | status VALUE | start | done | reopen | priority VALUE | "
-              "blocked IDS | block-by IDS | remove blocked IDS | remove block-by IDS] [flags]",
+              "attach FILES | detach NAMES | blocked IDS | block-by IDS | remove blocked IDS | "
+              "remove block-by IDS] [flags]",
         description="Show a ticket, edit it, comment on it, set its priority, or change its dependencies.",
         epilog="examples:\n"
                f"  • {p} . TKT-101                 show the ticket (a bare 101 works too)\n"
@@ -481,11 +518,14 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
                f"  • {p} . TKT-101 status doing    todo | doing | done | blocked (-s done also works)\n"
                f"  • {p} . TKT-101 done            shortcuts: start (doing), done, reopen (todo)\n"
                f"  • {p} . TKT-101 priority high   set the priority (high | medium | low; -p h also works)\n"
+               f"  • {p} . TKT-101 attach shot.png log.txt   attach files to the description (-a)\n"
+               f"  • {p} . TKT-101 detach shot.png           remove an attachment (-d)\n"
                f"  • {p} . TKT-101 blocked 104     TKT-101 blocks TKT-104\n"
                f"  • {p} . TKT-104 block-by 101    TKT-104 is blocked by TKT-101 (same link)\n"
                f"  • {p} . TKT-101 remove blocked 104       remove that link\n"
                f"  • {p} . TKT-104 -rbb 101                 ...from the other side\n"
-               "\npriority flag: -p/--priority VALUE (h, m, l and med are accepted too).\n"
+               "\nattachments live in <id>/attachments/description/ next to main.json5.\n"
+               "priority flag: -p/--priority VALUE (h, m, l and med are accepted too).\n"
                "dependency flags: -b/--blocked, -bb/--block-by, -rb/--remove-blocked,\n"
                "-rbb/--remove-block-by (each takes one or more ticket ids). Cycles are refused.\n"
                "edit and the dependency commands change files under .todo/ (and comment adds one);\n"
@@ -497,6 +537,8 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
     ap.add_argument("-m", "--message", help="comment text (with comment)")
     ap.add_argument("-p", "--priority", metavar="VALUE", help="set the priority: high | medium | low")
     ap.add_argument("-s", "--status", metavar="VALUE", help="set the status: todo | doing | done | blocked")
+    ap.add_argument("-a", "--attach", nargs="+", metavar="FILE", help="attach files to the description")
+    ap.add_argument("-d", "--detach", nargs="+", metavar="NAME", help="remove description attachments")
     for flag, dest in (("-b", "blocked"), ("-bb", "block_by"),
                        ("-rb", "remove_blocked"), ("-rbb", "remove_block_by")):
         ap.add_argument(flag, "--" + dest.replace("_", "-"), dest=dest, nargs="+", metavar="ID")
@@ -519,6 +561,10 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
                 ap.error("status needs one value: todo, doing, done or blocked"
                          if head == "status" else f"{head} takes no arguments")
             ops.append(("status", value))
+        elif head in ("attach", "detach"):
+            if not ids:
+                ap.error(f"{head} needs at least one " + ("file" if head == "attach" else "attachment name"))
+            ops.append((head, ids))
         elif head == "priority":
             if len(ids) != 1:
                 ap.error("priority needs one value: high, medium or low")
@@ -532,11 +578,15 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
         ops.append(("priority", a.priority))
     if a.status is not None:
         ops.append(("status", a.status))
+    if a.attach:
+        ops.append(("attach", a.attach))
+    if a.detach:
+        ops.append(("detach", a.detach))
     ops += [("dep", k, rm, ids) for k, rm, ids in (
         ("blocked", False, a.blocked), ("block-by", False, a.block_by),
         ("blocked", True, a.remove_blocked), ("block-by", True, a.remove_block_by)) if ids]
     if len(ops) > 1 and {o[0] for o in ops} != {"dep"}:
-        ap.error("choose one of edit, comment, status, priority or dependency changes")
+        ap.error("choose one of edit, comment, status, priority, attach, detach or dependency changes")
     if any(o[0] == "dep" and not o[3] for o in ops):
         ap.error("give at least one ticket id")
     if a.message is not None and not any(o[0] == "comment" for o in ops):
@@ -556,6 +606,10 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
         cmd_priority(engine, tid, ops[0][1], ap)
     elif ops[0][0] == "status":
         cmd_status(engine, tid, ops[0][1], ap)
+    elif ops[0][0] == "attach":
+        cmd_attach(engine, tid, ops[0][1])
+    elif ops[0][0] == "detach":
+        cmd_detach(engine, tid, ops[0][1])
     else:
         for _, kind, remove, ids in ops:
             cmd_deps(engine, tid, kind, remove, ids)
@@ -579,7 +633,10 @@ def cmd_new(engine: Engine, argv: list[str], p: str) -> None:
     ap.add_argument("-d", "--description", default="")
     ap.add_argument("--status", default="todo", metavar="VALUE")
     ap.add_argument("--id", help="ticket id (default: next TKT-N)")
+    ap.add_argument("--attach", nargs="+", default=[], metavar="FILE",
+                    help="attach files to the description")
     a = ap.parse_args(argv)
+    files = read_files(a.attach)
     title, description = " ".join(a.title).strip(), a.description
     if not title:
         with tempfile.NamedTemporaryFile("w+", suffix=".md", delete=False, encoding="utf-8") as f:
@@ -605,7 +662,7 @@ def cmd_new(engine: Engine, argv: list[str], p: str) -> None:
     if a.id:
         data["id"] = a.id
     try:
-        task, _ = engine.save_task(data, create=True)
+        task, _ = engine.save_task(data, create=True, files=files)
     except ValidationError as e:
         fail(str(e))
     print(f"created {task['id']}  {task['title']}")
