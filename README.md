@@ -40,9 +40,19 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 
 **Command line** – the same tickets in the terminal ([details below](#terminal-tickets-from-the-command-line)).
 
+**Board** (`utd . board`)
+
 ![Kanban board in the terminal](docs/screenshots/cli-board.png)
 
+**List** (`utd . ls`, plus the project info)
+
 ![Ticket list in the terminal](docs/screenshots/cli-tickets.png)
+
+**Ticket** (`utd . TKT-101`)
+
+![A ticket in the terminal](docs/screenshots/cli-ticket.png)
+
+**Commands**
 
 ![Known repos and the command list](docs/screenshots/cli.png)
 
@@ -114,7 +124,17 @@ utd my-repo ls --status todo  # by known repo name (or number)
 utd . serve --port 9000       # serve the web UI (what `utd` alone used to do)
 ```
 
+List and project info:
+
 ![Ticket list and project info](docs/screenshots/cli-tickets.png)
+
+The board:
+
+![Kanban board in the terminal](docs/screenshots/cli-board.png)
+
+A ticket, with its blockers, description and comments:
+
+![A ticket](docs/screenshots/cli-ticket.png)
 
 Change tickets (every change is a file edit under `.todo/`, nothing is committed until `save`):
 
@@ -139,8 +159,6 @@ utd . save [-m "message"] [--set-upstream]   # Save work: commit only .todo/, th
 ```
 
 ![save and pull](docs/screenshots/cli-sync.png)
-
-![A ticket](docs/screenshots/cli-ticket.png)
 
 Details:
 - `ls`, `board`, `next` and the ticket view take `--json` (the info command too) for scripts; `ls --ids` prints just the ids.
