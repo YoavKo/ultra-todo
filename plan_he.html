@@ -35,7 +35,7 @@
 <h2>הקשר</h2>
 <p>פרויקט חדש לגמרי בתיקייה <code>ultra-todo/</code> (Python 3.12, git 2.43). בונים את מנהל המשימות המתואר במסמך העיצוב: קובצי משימה בפורמט JSON5 בתוך <code>&lt;repo&gt;/.todo/tasks/</code>, אינדקס SQLite גלובלי בתיקיית המטמון של מערכת ההפעלה, פסילת מטמון לפי ה-hash של <code>HEAD</code>, אימות תלויות כגרף חסר מעגלים (DAG), והכול מוגש באמצעות Flask ו-waitress.</p>
 <p>דרישות שנוספו: <strong>תמיכה מלאה בעברית ובאנגלית</strong> (ממשק מתורגם, פריסת RTL, וטיפול נכון בתוכן עברי), בחירת השפה דרך דגל שורת פקודה כברירת מחדל ודרך מתג בתוך הממשק; <strong>תגיות (tags)</strong> עם סינון; <strong>תגובות</strong> (דיון) בכל משימה, עם קבצים מצורפים ותמונות; ותמיכה ב-<strong>uv</strong>.</p>
-<p>נוספו בהמשך: <strong>עדיפות</strong> (גבוהה / בינונית / נמוכה); <strong>חלונית תלויות</strong> בעמוד המשימה (מה חוסם אותה ומה היא חוסמת, עם הסרה בלחיצה); <strong>הרצת כמה מאגרים במקביל</strong> עם בחירת פורט פנוי אוטומטית; <strong>רשימת מאגרים מוכרים</strong> עם הפקודות <code>ls</code> / <code>open</code> / <code>forget</code>; וקיצור דרך ל-bash בשם <code>utd</code> עם השלמה בטאב.</p>
+<p>נוספו בהמשך: <strong>עדיפות</strong> (גבוהה / בינונית / נמוכה); <strong>חלונית תלויות</strong> בעמוד המשימה (מה חוסם אותה ומה היא חוסמת, עם הסרה בלחיצה); <strong>הרצת כמה מאגרים במקביל</strong> עם בחירת פורט פנוי אוטומטית; <strong>רשימת מאגרים מוכרים</strong> עם הפקודות <code>ls</code> / <code>open</code> / <code>forget</code>; וקיצור דרך ל-bash בשם <code>utd</code> עם השלמה בטאב; ולאחר מכן <strong>פקודות טרמינל</strong> לעיון במשימות ולשינוין בלי דפדפן (<code>utd REPO ls|board|next|new|pull|save|ID …</code>).</p>
 
 <h2>מבנה הפרויקט</h2>
 <pre><code>ultra-todo/
@@ -44,15 +44,18 @@
 ├── requirements.txt     # נוצר ע"י uv export למי שלא משתמש ב-uv
 ├── babel.cfg
 ├── src/
-│   ├── app.py           # CLI (‎--target, --lang, --port, ls/open/forget…), נתיבים, בחירת שפה
+│   ├── app.py           # הגשה + ls/open/forget, נתיבים, בחירת שפה; מעביר ‎REPO … ל-cli.py
 │   ├── engine.py        # קבצים, git, אינדקס SQLite, הידרציה, סנכרון
 │   ├── repos.py         # רשימת המאגרים המוכרים (repos.json)
+│   ├── cli.py           # פקודות הטרמינל ‎REPO ls|board|next|new|pull|save|ID …
 │   ├── graph.py         # DAG וזיהוי מעגלים (DFS)
 │   ├── i18n.py          # Babel, קביעת שפה, כיוון כתיבה
 │   ├── translations/{he,en}/LC_MESSAGES/messages.po
 │   ├── static/{app.css,app.js}
 │   └── templates/{base,board,task,list}.html
-└── tests/               # pytest: engine, sync, routes, i18n, repos</code></pre>
+├── shell/utd.bash       # הפונקציה utd + השלמה בטאב (נטענת מ-~/.bashrc)
+├── docs/screenshots/    # תמונות ה-README (ממשק הרשת במצב כהה, תצלומי טרמינל)
+└── tests/               # pytest: engine, sync, routes, i18n, repos, cli</code></pre>
 <p>(במסמך העיצוב <code>templates/</code> נמצא לצד <code>src/</code>; כאן הוא בתוך <code>src/</code> כדי ש-Flask ימצא אותו כברירת מחדל – קל להזיז.)</p>
 
 <h2>מנוע הליבה (<code>engine.py</code>)</h2>
@@ -151,7 +154,20 @@
   <li><strong><code>ultra-todo open NAME|NUMBER [flags]</code></strong>: מגיש מאגר מוכר לפי שם (ללא תלות באותיות גדולות/קטנות) או לפי מספרו ב-<code>ls</code>; שם קודם למספר. שני מאגרים באותו שם ← שגיאה עם שני הנתיבים. המספרים עוקבים אחרי סדר <code>ls</code>, ולכן משתנים כשפותחים מאגר אחר (<code>open 1</code> = האחרון).</li>
   <li><strong><code>ultra-todo forget NAME|NUMBER,...</code></strong>: מסיר מאגרים מהרשימה ואת השורות שלהם מאינדקס המטמון (אחרת היו מיובאים חזרה). שמות ומספרים, מופרדים ברווח או בפסיק (<code>3,5</code>). כולם מפוענחים מול אותה רשימה לפני שמשהו נמחק; אם אחד לא מוכר – לא נמחק כלום. אפשר לשכוח גם מאגרים חסרים. קובצי המאגר אינם נוגעים; הגשה מחדש מוסיפה אותו שוב.</li>
   <li><strong>עזרה:</strong> ‏<code>-h</code>/<code>--help</code> מציג את הדגלים ורשימת פקודות; לכל פקודה עזרה משלה עם דוגמאות (<code>ls -h</code>, ‏<code>open -h</code>, ‏<code>forget -h</code>).</li>
-  <li><strong>קיצור הדרך <code>utd</code></strong> (פונקציית bash ב-<code>~/.bashrc</code>, הקוד המלא ב-README): ‏<code>utd [PATH] [flags]</code> מריץ <code>uv run --project &lt;checkout&gt; ultra-todo --target &lt;נתיב מלא&gt;</code> מכל תיקייה; ברירת המחדל היא התיקייה הנוכחית, ודגלים בלבד (<code>utd --lang he</code>) עדיין משתמשים בה. ‏<code>utd ls|open|forget</code> מועברים כמו שהם. ‏<code>utd</code> מגדיר <code>ULTRA_TODO_PROG=utd</code> כך שהעזרה והודעות השגיאה מדברות במונחי <code>utd</code> (ו-<code>--target</code> מוסתר). השלמה בטאב: פקודות ותיקיות קודם, שמות מאגרים אחרי <code>open</code>/<code>forget</code> (גם אחרי פסיק), אחר כך דגלים (<code>--lang</code> משלים ל-<code>en</code>/<code>he</code>). לתיקייה בשם <code>ls</code> כותבים <code>utd ./ls</code>.</li>
+  <li><strong>קיצור הדרך <code>utd</code></strong>: הקובץ <code>shell/utd.bash</code> (נטען מ-<code>~/.bashrc</code>; הוא מוצא את ה-checkout לפי הנתיב של עצמו) מגדיר את <code>utd</code>, שמריץ <code>ULTRA_TODO_PROG=utd uv run --project &lt;checkout&gt; ultra-todo "$@"</code>. כל עיבוד הארגומנטים נעשה ב-Python, ולכן הקיצור רק מעביר הלאה; ‏<code>ULTRA_TODO_PROG=utd</code> גורם לעזרה ולשגיאות לדבר במונחי <code>utd</code>. השלמה: פקודות, שמות מאגרים ותיקיות קודם, ואז לכל מאגר – הפעולות, מזהי משימות, ערכים (סטטוס, עדיפות) והדגלים של כל פקודה. לתיקייה בשם <code>ls</code> כותבים <code>utd ./ls</code>.</li>
+</ul>
+
+<h2>פקודות טרמינל (<code>cli.py</code>)</h2>
+<p>‏<code>ultra-todo REPO [ACTION …]</code> (וגם <code>utd REPO …</code>) עובד על מאגר אחד מהטרמינל. הכול עובר דרך אותן קריאות <code>Engine</code> כמו ממשק הרשת, ולכן האימות זהה (מעגלים, מזהים, נרמול תגיות).</p>
+<ul>
+  <li><strong>REPO:</strong> ‏<code>.</code> / <code>..</code> / כל נתיב (מתחיל ב-<code>/</code>, ‏<code>~</code>, ‏<code>./</code>, ‏<code>../</code> או מכיל מפריד) או שם/מספר של מאגר מוכר (<code>repos.resolve</code>). שם לא מוכר ← שגיאה עם רמז לכתוב <code>./name</code>. המילים <code>ls</code>, ‏<code>open</code>, ‏<code>forget</code> כמילה ראשונה הן פקודות רשימת המאגרים; ‏<code>utd</code> לבדו מדפיס עזרה.</li>
+  <li><strong>קריאה:</strong> בלי פעולה = מידע על הפרויקט (ענף, upstream, ahead/behind, שינויי <code>.todo</code> שלא נשמרו, ספירה לפי סטטוס, פתוחות לפי עדיפות ואחראי, תגיות); ‏<code>ls</code> = טבלה (מסננים <code>--status --priority --assignee -t/--tag --any -q --open --mine</code>); ‏<code>board</code> = ארבעה טורים של כרטיסים בתיבות (מזהה, סימן עדיפות, ‏<code>→N</code> חוסם, ‏<code>✖N</code> חסום ע"י, ‏<code>@אחראי</code>, ‏<code>#תגיות</code>), מותאם לרוחב הטרמינל ומוערם כשהוא צר; ‏<code>next</code> = משימות פתוחות שכל החוסמות שלהן הושלמו, עדיפות גבוהה קודם, ובתוך עדיפות – בטיפול קודם; ‏<code>ID</code> = משימה עם חוסמים, נחסמות, תיאור ותגובות. ‏<code>--json</code> במידע, ב-<code>ls</code>, ב-<code>next</code> ובתצוגת משימה (‏<code>project_path</code> של האינדקס מוסר); ‏<code>ls --ids</code> להשלמה.</li>
+  <li><strong>איתור משימה:</strong> מזהה מדויק, אחרת ללא התחשבות באותיות, אחרת מספר חשוף שמתאים לדיוק ל-<code>PREFIX-N</code> אחד; כמה התאמות או אפס ← שגיאה.</li>
+  <li><strong>שינוי</strong> (כותב קבצים, אף פעם לא עושה commit): ‏<code>new [TITLE] [-p -a -t -d --status --id]</code> (בלי כותרת: ‏<code>$EDITOR</code>, השורה הראשונה כותרת והשאר תיאור); ‏<code>status VALUE</code> / ‏<code>-s</code> והקיצורים <code>start</code>, ‏<code>done</code>, ‏<code>reopen</code> (כינויים כמו <code>doing</code>, ‏<code>wip</code>); ‏<code>priority VALUE</code> / ‏<code>-p</code> (‏<code>h/m/l</code>, ‏<code>med</code>); ‏<code>comment</code> / ‏<code>-c</code> עם <code>-m</code>, ‏<code>$EDITOR</code> (בסגנון git commit, שורות <code>#</code> נמחקות) או stdin; ‏<code>edit</code> / ‏<code>-e</code> פותח את קובץ המשימה ב-<code>$VISUAL</code>/<code>$EDITOR</code> ואחר כך מאמת אותו (JSON5 תקין, שדות קנוניים, המזהה לא השתנה, אין מעגל); קובץ לא תקין נשמר, וההודעה מסבירה איך לתקן או לבצע <code>git checkout</code>.</li>
+  <li><strong>תלויות:</strong> ‏<code>blocked IDS</code> / ‏<code>-b</code> (המשימה הזו חוסמת את IDS), ‏<code>block-by IDS</code> / ‏<code>-bb</code> (חסומה ע"י IDS), ‏<code>remove blocked</code> / ‏<code>-rb</code>, ‏<code>remove block-by</code> / ‏<code>-rbb</code>. פעולת שינוי אחת בקריאה (אפשר לשלב כמה דגלי תלות). מעגלים וקישור עצמי נדחים; הסרת מזהה חוסם שכבר לא קיים עובדת.</li>
+  <li><strong>סנכרון:</strong> ‏<code>pull [--rebase]</code> ו-<code>save [-m MSG] [--set-upstream]</code> קוראים ל-<code>engine.pull</code> / ‏<code>engine.save_work</code> (אותם כללים כמו הכפתורים: רק <code>.todo/</code> נכנס ל-commit, בלי force-push, התנגשויות מבוטלות נקי). קודי <code>SyncError</code> הופכים למשפטים שמציינים את הפקודה הבאה להרצה. ‏<code>save</code> בלי upstream כבר ביצע commit כשהוא מבקש <code>--set-upstream</code> (התנהגות המנוע, משותפת עם האפליקציה).</li>
+  <li><strong>פלט:</strong> טבלאות לפי רוחב תצוגה (סימני צירוף נספרים 0, תווים רחבים 2), צבע רק ב-tty (כבוי עם <code>NO_COLOR</code>, מאולץ עם <code>CLICOLOR_FORCE=1</code>), ‏<code>✖</code> במקום אימוג'י כדי שגבולות הכרטיסים יישארו ישרים.</li>
+  <li><strong>שינוי שובר תאימות:</strong> ההגשה עברה ל-<code>utd REPO serve [flags]</code>; ‏<code>utd</code> ו-<code>utd PATH</code> כבר לא מגישים. ‏<code>ultra-todo --target PATH</code> ו-<code>open NAME</code> ללא שינוי.</li>
 </ul>
 
 <h2>סדר בנייה</h2>
@@ -165,6 +181,7 @@
   <li>‏i18n: חיבור Babel, חילוץ מחרוזות, קטלוג <code>he</code>, ‏CSS ל-RTL, ‏<code>dir=auto</code> לתוכן, מתג ודגל שורת פקודה.</li>
   <li>ליטוש: דפי שגיאה, ‏README עם הוראות שימוש ופקודות <code>pybabel</code>.</li>
   <li>תוספות אחרי הגרסה הראשונה: חלונית תלויות, עדיפות, פורט פנוי אוטומטי, רשימת מאגרים (<code>ls</code>/<code>open</code>/<code>forget</code>) וקיצור <code>utd</code> עם השלמה בטאב.</li>
+  <li>פקודות טרמינל (<code>cli.py</code>): מידע/ls/board/next/תצוגת משימה, ‏new/status/priority/comment/edit/תלויות, ‏pull/save, ‏<code>shell/utd.bash</code> עם השלמה, ותמונות ל-README.</li>
 </ol>
 
 <h2>אימות</h2>
@@ -174,6 +191,7 @@
   <li><strong>סנכרון</strong> (בדיקות עם remote חשוף זמני ושני clones): עדכון מבצע fast-forward והאינדקס משקף משימות ותגובות שנוספו/שונו/נמחקו; ענף מפוצל ← הצעת rebase; קונפליקט ב-rebase ← ביטול, מאגר נקי, רשימת קבצים; שמירה מוסיפה ל-stage רק את <code>.todo/</code> (קובץ מחוץ אליו נשאר ללא stage); דחיית push ← שגיאה ידידותית ובלי force; בלי upstream ← "עדכון" מושבת ו"שמירה" מציעה <code>push -u</code>; ספירות התג ו-ahead/behind נכונות; שום פעולה לא נתקעת על בקשת סיסמה.</li>
   <li><strong>תלויות ועדיפות:</strong> הסרה והוספה של קישור מכל צד; קישור שיוצר מעגל נדחה; שמירת טופס המשימה לא מוחקת חוסמים; ברירת מחדל <code>medium</code>, ערך לא חוקי נדחה, מיון גבוהה ← בינונית ← נמוכה, סינון לפי עדיפות, תוויות בעברית.</li>
   <li><strong>מאגרים ופורטים:</strong> שני מופעים בלי <code>--port</code> מקבלים פורטים שונים; פורט מפורש תפוס ← שגיאה ברורה; רישום ופתיחה לפי שם (ללא תלות באותיות) ולפי מספר; שם כפול ← שגיאה; מאגר חסר מדולג ב-<code>open</code>; ייבוא מהמטמון; ‏<code>forget</code> לפי מספרים ושמות, הכול-או-כלום, ולא מיובא חזרה; ספירות <code>[open, done]</code> כוללות עריכות שלא נעשה להן commit.</li>
+  <li><strong>פקודות טרמינל</strong> (<code>tests/test_cli.py</code>): מידע ו-<code>--json</code>; מסננים, סדר, ‏<code>--open</code>, ‏<code>--mine</code> ב-<code>ls</code>; רוחב הלוח והפריסה המוערמת; איתור משימה לפי מזהה, אותיות ומספר חשוף; מפרטי מאגר (נתיב, שם, רמז <code>./name</code>, ארגומנטי serve); ארבעת סוגי התלויות, דחיית מעגל וקישור עצמי, הסרת חוסם שלא קיים; ערכי עדיפות וסטטוס וכינויים; תגובה מ-<code>-m</code>, מ-stdin ודחיית תגובה ריקה; ‏<code>edit</code> עם עורך מדומה (תקין, ללא שינוי, לא תקין, מזהה שהשתנה, כשל בעורך); דגלי <code>new</code>, התנגשות <code>--id</code>, תבנית <code>$EDITOR</code>; ‏<code>next</code>; ‏<code>save</code>/<code>pull</code> מול remote חשוף זמני, כולל בלי remote, בלי upstream, דחיית push, סטייה ← <code>--rebase</code>.</li>
   <li>‏<code>uv sync</code> מ-checkout נקי עובד; ‏<code>uv run ultra-todo --help</code> רץ.</li>
   <li><strong>pytest כללי:</strong> הידרציה (hit/miss/diff/מחיקה/שינוי שם); שינוי שלא נעשה לו commit מזוהה; מעגל ← 400; ID עם path traversal נדחה; כותרת בעברית עוברת קובץ ← SQLite ← HTML ללא שינוי; סדר קביעת השפה; תכונת <code>dir</code> לכל שפה.</li>
   <li><strong>ידני:</strong> יוצרים מאגר git זמני עם <code>.todo/tasks/</code>, מריצים, מוודאים שהאתחול השני מדלג על הסריקה (שורת לוג "cache hit"), עורכים קובץ ידנית ודרך commit בסגנון <code>git pull</code> ומוודאים רענון. מחליפים he↔en: הפריסה מתהפכת, משימה בעברית עם ID באנגלית מוצגת נכון, גרירה עובדת ב-RTL. מוודאים ש-<code>git status</code> במאגר היעד מציג רק שינויים בקובצי <code>.json5</code> (וקבצים מצורפים של משתמש) – ללא בינאריים של האפליקציה.</li>

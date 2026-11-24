@@ -3,7 +3,7 @@
 ## Context
 Greenfield project in `ultra-todo/` (Python 3.12, git 2.43). Build the self-hosted GitOps task manager from the design doc: JSON5 task files in `<repo>/.todo/tasks/`, a global SQLite index in the OS cache dir, HEAD-hash cache invalidation, DAG dependency validation, served by Flask + waitress. Added requirement: **full Hebrew + English support** — translated UI, RTL layout, correct Hebrew content handling, language chosen via CLI default plus in-UI toggle; **tags** with filtering; per-task **comments** with attachments; **uv** support.
 
-Added later: **priority** (high / medium / low); a **dependencies panel** on the task page (what blocks it and what it blocks, one-click removal); **several repos at once** with automatic free-port selection; a **known-repos list** with `ls` / `open` / `forget` commands; and a `utd` bash shortcut with tab completion.
+Added later: **priority** (high / medium / low); a **dependencies panel** on the task page (what blocks it and what it blocks, one-click removal); **several repos at once** with automatic free-port selection; a **known-repos list** with `ls` / `open` / `forget` commands; and a `utd` bash shortcut with tab completion; then **terminal commands** to browse and change tickets without the browser (`utd REPO ls|board|next|new|pull|save|ID …`).
 
 ## Layout
 ```
@@ -13,15 +13,18 @@ ultra-todo/
 ├── requirements.txt          # generated via `uv export` for non-uv users (flask, waitress, json5, flask-babel, platformdirs)
 ├── babel.cfg
 ├── src/
-│   ├── app.py                # CLI (--target, --lang, --port, ls/open/forget…), routes, locale selector
+│   ├── app.py                # serve + `ls`/`open`/`forget`, routes, locale selector; hands `REPO …` to cli.py
 │   ├── engine.py             # task file I/O, git helpers, SQLite index, hydration, sync
 │   ├── repos.py              # known-repos list (repos.json)
+│   ├── cli.py                # `REPO ls|board|next|new|pull|save|ID …` terminal commands
 │   ├── graph.py              # DAG + DFS cycle detection
 │   ├── i18n.py               # Babel setup, locale resolution, direction helper
 │   ├── translations/{he,en}/LC_MESSAGES/messages.po
 │   ├── static/{app.css,app.js}
 │   └── templates/{base,board,task,list}.html
-└── tests/                    # pytest: engine, sync, routes, i18n, repos
+├── shell/utd.bash            # `utd` function + tab completion (sourced from ~/.bashrc)
+├── docs/screenshots/         # README images (web UI in dark mode, terminal renders)
+└── tests/                    # pytest: engine, sync, routes, i18n, repos, cli
 ```
 (Design doc puts `templates/` beside `src/`; keeping it inside `src/` so Flask finds it by default — trivial to move.)
 
@@ -90,7 +93,18 @@ Build adjacency from `dependencies` for the project, add the proposed edge(s), i
 - **`ultra-todo open NAME|NUMBER [flags]`**: serve a known repo by name (case-insensitive) or `ls` number; names win over numbers. Two repos with the same name → error listing both paths. Numbers follow the `ls` order, so they shift when another repo is opened (`open 1` = the last one).
 - **`ultra-todo forget NAME|NUMBER,...`**: remove repos from the list and their rows from the cache index (otherwise they'd be re-imported). Names and numbers, space- or comma-separated (`3,5`). All are resolved against one listing before anything is removed; if one is unknown, nothing is removed. Missing repos can be forgotten too. The repo's files are never touched; serving it again adds it back.
 - **Help**: `-h`/`--help` shows the flags and a commands list; each command has its own help with examples (`ls -h`, `open -h`, `forget -h`).
-- **`utd` shortcut** (bash function in `~/.bashrc`, full code in the README): `utd [PATH] [flags]` runs `uv run --project <checkout> ultra-todo --target <absolute path>` from any directory; the path defaults to the current directory, and flags alone (`utd --lang he`) still use it. `utd ls|open|forget` pass through. `utd` sets `ULTRA_TODO_PROG=utd` so help and errors speak in `utd` terms (and `--target` is hidden). Tab completion: commands and directories first, repo names after `open`/`forget` (also after a comma), then flags (`--lang` completes `en`/`he`). For a directory named `ls`, write `utd ./ls`.
+- **`utd` shortcut**: `shell/utd.bash` (sourced from `~/.bashrc`; it finds the checkout from its own path) defines `utd`, which runs `ULTRA_TODO_PROG=utd uv run --project <checkout> ultra-todo "$@"`. All argument handling is in Python, so the shortcut is a pass-through; `ULTRA_TODO_PROG=utd` makes help and errors speak in `utd` terms. Completion: commands, repo names and directories first, then per repo the actions, ticket ids, values (status, priority) and each command's flags. For a directory named `ls`, write `utd ./ls`.
+
+## Terminal commands (`cli.py`)
+`ultra-todo REPO [ACTION …]` (also as `utd REPO …`) works on one repo from the terminal. Everything goes through the same `Engine` calls as the web UI, so validation is identical (cycles, ids, tag normalisation).
+- **REPO**: `.` / `..` / any path (starts with `/`, `~`, `./`, `../` or contains a separator) or a known repo's name or `ls` number (`repos.resolve`). An unknown name errors with a hint to write `./name`. `ls`, `open` and `forget` as the first word are the repo-list commands; `utd` alone prints help.
+- **Reading**: no action = project info (branch, upstream, ahead/behind, uncommitted `.todo` changes, counts by status, open by priority and assignee, tags); `ls` = table (filters `--status --priority --assignee -t/--tag --any -q --open --mine`); `board` = four columns of boxed cards (ID, priority mark, `→N` blocks, `✖N` blocked by, `@assignee`, `#tags`), fitted to the terminal width and stacked when it is too narrow; `next` = open tickets whose blockers are all done, high priority first, in-progress first within a priority; `ID` = ticket with blockers, blocked tickets, description and comments. `--json` on info, `ls`, `next` and the ticket view (the index's `project_path` is stripped); `ls --ids` for completion.
+- **Ticket lookup**: exact id, else case-insensitive, else a bare number matching exactly one `PREFIX-N`; several matches or none → error.
+- **Changing** (writes files, never commits): `new [TITLE] [-p -a -t -d --status --id]` (no title: `$EDITOR`, first line title, rest description); `status VALUE` / `-s` and the shortcuts `start`, `done`, `reopen` (aliases such as `doing`, `wip`); `priority VALUE` / `-p` (`h/m/l`, `med`); `comment` / `-c` with `-m`, `$EDITOR` (git-commit style, `#` lines dropped) or stdin; `edit` / `-e` opens the task file in `$VISUAL`/`$EDITOR` and afterwards validates it (JSON5 parses, canonical fields, id unchanged, no cycle); an invalid file is kept and the error says how to fix or `git checkout` it.
+- **Dependencies**: `blocked IDS` / `-b` (this ticket blocks IDS), `block-by IDS` / `-bb` (blocked by IDS), `remove blocked` / `-rb`, `remove block-by` / `-rbb`. One mutating action per call (several dependency flags may be combined). Cycles and self-links are refused; removing a dangling blocker id works.
+- **Sync**: `pull [--rebase]` and `save [-m MSG] [--set-upstream]` call `engine.pull` / `engine.save_work` (same rules as the buttons: only `.todo/` is committed, no force-push, conflicts abort cleanly). `SyncError` codes become CLI sentences that name the next command to run. `save` without an upstream has already committed when it asks for `--set-upstream` (engine behaviour, shared with the app).
+- **Output**: tables sized with display width (combining marks count 0, wide characters 2), colour only on a tty (off with `NO_COLOR`, forced with `CLICOLOR_FORCE=1`), `✖` instead of an emoji so card borders stay aligned.
+- **Breaking change**: serving moved to `utd REPO serve [flags]`; `utd` and `utd PATH` no longer serve. `ultra-todo --target PATH` and `open NAME` are unchanged.
 
 ## Build order
 **First action after approval** (plan mode only allows editing this file): create docs only (no app code yet): `ultra-todo/PLAN.md` (this plan), `ultra-todo/plan_he.html` (full Hebrew translation of the whole plan, standalone RTL page with `lang="he" dir="rtl"`, Hebrew-capable font, code/paths kept LTR via `<bdi>`/`dir="ltr"`, works in light/dark, printable), and `ultra-todo/README.md` (overview, pillars, repo/cache layout, task + comment file formats, `uv` install/run, CLI flags, he/en usage, `pybabel` workflow, Git LFS note for attachments, dev/test commands). Keep both updated as the design changes.
@@ -103,6 +117,7 @@ Build adjacency from `dependencies` for the project, add the proposed edge(s), i
 5. i18n: Babel wiring, extract strings, write `he` catalog, RTL CSS, `dir=auto` content, toggle + CLI flag.
 6. Polish: error pages, README with usage and `pybabel` commands.
 7. Later additions: dependencies panel, priority, automatic free port, known-repos list (`ls`/`open`/`forget`), `utd` shortcut with tab completion.
+8. Terminal commands (`cli.py`): info/ls/board/next/ticket view, new/status/priority/comment/edit/dependencies, pull/save, `shell/utd.bash` with completion, README screenshots.
 
 ## Verification
 - Tags: `uv run pytest` cases — tag normalization/dedupe, Hebrew tag round-trip, AND vs OR filtering, tag edit updates `task_tags`, differential hydration removes tags of deleted tasks, `/api/tags` counts.
@@ -110,6 +125,7 @@ Build adjacency from `dependencies` for the project, add the proposed edge(s), i
 - Sync (tests use a temp bare remote + two clones): Update fast-forwards and the index reflects added/changed/deleted tasks and comments; diverged branch → rebase offer; rebase conflict → aborted, repo clean, files listed; Save stages only `.todo/` (a file outside it stays unstaged); push rejected → friendly error, no force; no upstream → Update disabled, Save offers `push -u`; status badge counts and ahead/behind are correct; no operation hangs on a credential prompt.
 - Dependencies and priority: remove/add a link from either side; a cycle-making link is rejected; saving the task form keeps blockers; default `medium`, invalid value rejected, high → medium → low ordering, priority filter, Hebrew labels.
 - Repos and ports: two instances without `--port` get different ports; a busy explicit port → clear error; record and open by name (case-insensitive) and by number; duplicate name → error; missing repo skipped by `open`; import from the cache; `forget` by numbers and names, all-or-nothing, not re-imported; `[open, done]` counts include uncommitted edits.
+- Terminal commands (`tests/test_cli.py`): info/`--json`; `ls` filters, ordering, `--open`, `--mine`; board width and the narrow stacked layout; ticket lookup by id, case and bare number; repo specs (path, name, `./name` hint, serve argv); all four dependency forms, cycle and self-link refusal, dangling blocker removal; priority/status values and aliases; comment from `-m`, stdin and rejection of empty ones; `edit` with a fake `$EDITOR` (valid, unchanged, invalid, id changed, editor failure); `new` flags, `--id` clash, `$EDITOR` template; `next` readiness; `save`/`pull` against a temp bare remote incl. no remote, no upstream, rejected push, diverged → `--rebase`.
 - `uv sync` from clean checkout works; `uv run ultra-todo --help` runs.
 - `pytest`: hydration hit/miss/diff/delete/rename; uncommitted edit detected; cycle → 400; path-traversal ID rejected; Hebrew title round-trips through file → SQLite → HTML unchanged; locale resolution order; `dir` attribute per locale.
 - Manual: create a scratch git repo with `.todo/tasks/`, run the app, confirm second boot skips scanning (log line "cache hit"), edit a file by hand and by `git pull`-style commit and confirm refresh. Switch he↔en: layout mirrors, Hebrew task with an English ID displays correctly, drag-drop works in RTL. Confirm `git status` of the target repo shows only `.json5` changes (no binaries).
