@@ -27,15 +27,24 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 
 **Kanban board** – tasks by status, with priority, assignee, tags and dependency badges; search and filter on top.
 
-![Kanban board](docs/screenshots/board.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/board-dark.png">
+  <img alt="Kanban board" src="docs/screenshots/board.png">
+</picture>
 
 **List view**
 
-![List view](docs/screenshots/list.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/list-dark.png">
+  <img alt="List view" src="docs/screenshots/list.png">
+</picture>
 
 **Adding a task**
 
-![New task page](docs/screenshots/task-new.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/task-new-dark.png">
+  <img alt="New task page" src="docs/screenshots/task-new.png">
+</picture>
 
 **Command line** – listing known repos and the built-in help.
 
