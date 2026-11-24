@@ -40,7 +40,9 @@ PRIORITY_COLOR = {"high": "red", "medium": "yellow", "low": "dim"}
 
 # ---- terminal helpers ------------------------------------------------------
 def use_color() -> bool:
-    return sys.stdout.isatty() and "NO_COLOR" not in os.environ
+    if "NO_COLOR" in os.environ:
+        return False
+    return sys.stdout.isatty() or os.environ.get("CLICOLOR_FORCE", "0") not in ("", "0")
 
 
 def paint(text: str, color: str | None) -> str:
