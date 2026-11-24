@@ -20,12 +20,16 @@ from datetime import datetime
 from pathlib import Path
 
 import repos
-from engine import (PRIORITIES, STATUSES, Engine, EngineError, NotFound, ValidationError,
-                    clean_task, load_file)
+from engine import (PRIORITIES, STATUSES, Engine, EngineError, NotFound, SyncError,
+                    ValidationError, clean_task, fold, load_file, run_git)
 
 # first words that are not a REPO (handled by app.main)
 COMMANDS = ("ls", "open", "forget")
-ACTIONS = ("ls", "board", "serve")
+STATUS_ALIASES = {"todo": "todo", "to-do": "todo", "open": "todo", "reopen": "todo",
+                  "doing": "in_progress", "in_progress": "in_progress", "in-progress": "in_progress",
+                  "progress": "in_progress", "wip": "in_progress", "start": "in_progress",
+                  "done": "done", "finish": "done", "blocked": "blocked"}
+STATUS_SHORTCUTS = {"start": "in_progress", "done": "done", "reopen": "todo"}
 STATUS_LABEL = {"todo": "To do", "in_progress": "In progress", "done": "Done", "blocked": "Blocked"}
 PRIORITY_MARK = {"high": "▲", "medium": "●", "low": "▼"}
 BOARD_ORDER = ("todo", "in_progress", "done", "blocked")
@@ -228,6 +232,15 @@ def add_filters(ap: argparse.ArgumentParser) -> None:
                     help="only tickets with this tag; repeat for several (all must match)")
     ap.add_argument("--any", action="store_true", help="with several --tag: match any, not all")
     ap.add_argument("-q", "--query", metavar="TEXT", help="search titles, descriptions, comments")
+    ap.add_argument("--open", action="store_true", help="hide done tickets")
+    ap.add_argument("--mine", action="store_true",
+                    help="only tickets assigned to you (git config user.name)")
+
+
+def me(engine: Engine) -> set[str]:
+    name = run_git(engine.root, "config", "user.name", check=False).stdout.strip()
+    email = run_git(engine.root, "config", "user.email", check=False).stdout.strip()
+    return {fold(x) for x in (name, email.split("@")[0]) if x}
 
 
 def public(t: dict) -> dict:
@@ -236,8 +249,14 @@ def public(t: dict) -> dict:
 
 
 def filtered(engine: Engine, a: argparse.Namespace) -> list[dict]:
-    return engine.list_tasks(status=a.status, assignee=a.assignee, q=a.query, tags=a.tag,
-                             priority=a.priority, match="any" if a.any else "all")
+    tasks = engine.list_tasks(status=a.status, assignee=a.assignee, q=a.query, tags=a.tag,
+                              priority=a.priority, match="any" if a.any else "all")
+    if a.open:
+        tasks = [t for t in tasks if t["status"] != "done"]
+    if a.mine:
+        mine = me(engine)
+        tasks = [t for t in tasks if fold(t["assignee"]) in mine]
+    return tasks
 
 
 def cmd_info(engine: Engine, argv: list[str], p: str) -> None:
@@ -367,7 +386,7 @@ def cmd_edit(engine: Engine, tid: str, p: str) -> None:
     except Exception as e:  # JSON5 syntax errors come from the parser, not EngineError
         fail(f"{tid} was saved but is not valid: {e}\n"
              f"fix it with `{p} REPO {tid} edit`, or undo with: git checkout -- {path.relative_to(engine.root)}")
-    print(f"{tid}: updated (not committed; use Save work in the app or git)")
+    print(f"{tid}: updated (not committed; use save or git)")
 
 
 COMMENT_HELP = "# Write your comment above. Lines starting with '#' are ignored.\n# An empty comment aborts.\n"
@@ -391,6 +410,23 @@ def cmd_comment(engine: Engine, tid: str, message: str | None) -> None:
     except ValidationError:
         fail("empty comment, nothing added")
     print(f"commented on {tid} as {c['author']}  ({c['id']})")
+
+
+def parse_status(value: str, ap: argparse.ArgumentParser) -> str:
+    key = value.strip().lower().replace(" ", "_")
+    if key not in STATUS_ALIASES:
+        ap.error(f"invalid status {value!r} (choose todo, doing, done or blocked)")
+    return STATUS_ALIASES[key]
+
+
+def cmd_status(engine: Engine, tid: str, value: str, ap: argparse.ArgumentParser) -> None:
+    new = parse_status(value, ap)
+    old = engine.get_task(tid)["status"]
+    if old == new:
+        print(f"{tid}: already {STATUS_LABEL[new].lower()}")
+        return
+    engine.set_status(tid, new)
+    print(f"{tid}: {STATUS_LABEL[old].lower()} → {STATUS_LABEL[new].lower()}")
 
 
 PRIORITY_ALIASES = {"h": "high", "m": "medium", "med": "medium", "l": "low"}
@@ -431,8 +467,8 @@ def cmd_deps(engine: Engine, tid: str, kind: str, remove: bool, specs: list[str]
 def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
     ap = argparse.ArgumentParser(
         prog=f"{p} REPO ID", formatter_class=argparse.RawDescriptionHelpFormatter,
-        usage=f"{p} REPO ID [edit | comment | priority VALUE | blocked IDS | block-by IDS | "
-              "remove blocked IDS | remove block-by IDS] [flags]",
+        usage=f"{p} REPO ID [edit | comment | status VALUE | start | done | reopen | priority VALUE | "
+              "blocked IDS | block-by IDS | remove blocked IDS | remove block-by IDS] [flags]",
         description="Show a ticket, edit it, comment on it, set its priority, or change its dependencies.",
         epilog="examples:\n"
                f"  • {p} . TKT-101                 show the ticket (a bare 101 works too)\n"
@@ -440,6 +476,8 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
                f"  • {p} . TKT-101 comment         write a comment in $EDITOR\n"
                f"  • {p} . TKT-101 -c -m 'done'    add a comment from the command line\n"
                f"  • echo 'looks good' | {p} . TKT-101 comment\n"
+               f"  • {p} . TKT-101 status doing    todo | doing | done | blocked (-s done also works)\n"
+               f"  • {p} . TKT-101 done            shortcuts: start (doing), done, reopen (todo)\n"
                f"  • {p} . TKT-101 priority high   set the priority (high | medium | low; -p h also works)\n"
                f"  • {p} . TKT-101 blocked 104     TKT-101 blocks TKT-104\n"
                f"  • {p} . TKT-104 block-by 101    TKT-104 is blocked by TKT-101 (same link)\n"
@@ -456,6 +494,7 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
     ap.add_argument("-c", "--comment", action="store_true", help="same as the comment action")
     ap.add_argument("-m", "--message", help="comment text (with comment)")
     ap.add_argument("-p", "--priority", metavar="VALUE", help="set the priority: high | medium | low")
+    ap.add_argument("-s", "--status", metavar="VALUE", help="set the status: todo | doing | done | blocked")
     for flag, dest in (("-b", "blocked"), ("-bb", "block_by"),
                        ("-rb", "remove_blocked"), ("-rbb", "remove_block_by")):
         ap.add_argument(flag, "--" + dest.replace("_", "-"), dest=dest, nargs="+", metavar="ID")
@@ -472,6 +511,12 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
             ops.append(("dep", ids[0], True, ids[1:]))
         elif head in DEP_WORDS:
             ops.append(("dep", head, False, ids))
+        elif head == "status" or head in STATUS_SHORTCUTS:
+            value = STATUS_SHORTCUTS.get(head) or (ids[0] if len(ids) == 1 else None)
+            if value is None or (head in STATUS_SHORTCUTS and ids):
+                ap.error("status needs one value: todo, doing, done or blocked"
+                         if head == "status" else f"{head} takes no arguments")
+            ops.append(("status", value))
         elif head == "priority":
             if len(ids) != 1:
                 ap.error("priority needs one value: high, medium or low")
@@ -483,11 +528,13 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
     ops += [(n,) for n, on in (("edit", a.edit), ("comment", a.comment)) if on]
     if a.priority is not None:
         ops.append(("priority", a.priority))
+    if a.status is not None:
+        ops.append(("status", a.status))
     ops += [("dep", k, rm, ids) for k, rm, ids in (
         ("blocked", False, a.blocked), ("block-by", False, a.block_by),
         ("blocked", True, a.remove_blocked), ("block-by", True, a.remove_block_by)) if ids]
     if len(ops) > 1 and {o[0] for o in ops} != {"dep"}:
-        ap.error("choose one of edit, comment, priority or dependency changes")
+        ap.error("choose one of edit, comment, status, priority or dependency changes")
     if any(o[0] == "dep" and not o[3] for o in ops):
         ap.error("give at least one ticket id")
     if a.message is not None and not any(o[0] == "comment" for o in ops):
@@ -505,9 +552,140 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
         cmd_comment(engine, tid, a.message)
     elif ops[0][0] == "priority":
         cmd_priority(engine, tid, ops[0][1], ap)
+    elif ops[0][0] == "status":
+        cmd_status(engine, tid, ops[0][1], ap)
     else:
         for _, kind, remove, ids in ops:
             cmd_deps(engine, tid, kind, remove, ids)
+
+
+def cmd_new(engine: Engine, argv: list[str], p: str) -> None:
+    ap = argparse.ArgumentParser(
+        prog=f"{p} REPO new", formatter_class=argparse.RawDescriptionHelpFormatter,
+        usage=f"{p} REPO new [TITLE] [flags]",
+        description="Create a ticket and print its id. Without a title, $EDITOR opens: the first\n"
+                    "line is the title, the rest the description (lines starting with # are ignored).",
+        epilog="examples:\n"
+               f"  • {p} . new 'Fix login redirect' -p high -a alice -t backend -t auth\n"
+               f"  • {p} . new 'Write docs' -d 'Cover the public API' --status doing\n"
+               "\nThe file is written, not committed: use save (or Save work in the app).")
+    ap.add_argument("title", nargs="*")
+    ap.add_argument("-p", "--priority", default="medium", metavar="VALUE")
+    ap.add_argument("-a", "--assignee", default="", metavar="NAME")
+    ap.add_argument("-t", "--tag", action="append", default=[], metavar="TAG",
+                    help="repeat for several, or comma-separated")
+    ap.add_argument("-d", "--description", default="")
+    ap.add_argument("--status", default="todo", metavar="VALUE")
+    ap.add_argument("--id", help="ticket id (default: next TKT-N)")
+    a = ap.parse_args(argv)
+    title, description = " ".join(a.title).strip(), a.description
+    if not title:
+        with tempfile.NamedTemporaryFile("w+", suffix=".md", delete=False, encoding="utf-8") as f:
+            f.write("\n\n# First line: the title. The rest: the description.\n"
+                    "# Lines starting with '#' are ignored. An empty title aborts.\n")
+        tmp = Path(f.name)
+        try:
+            run_editor(tmp)
+            lines = [l for l in tmp.read_text(encoding="utf-8").splitlines() if not l.startswith("#")]
+        finally:
+            tmp.unlink(missing_ok=True)
+        text = "\n".join(lines).strip()
+        title, _, description = text.partition("\n")
+        title, description = title.strip(), description.strip()
+    if not title:
+        fail("empty title, nothing created")
+    priority = PRIORITY_ALIASES.get(a.priority.lower(), a.priority.lower())
+    if priority not in PRIORITIES:
+        ap.error(f"invalid priority {a.priority!r} (choose high, medium or low)")
+    data = {"title": title, "priority": priority, "assignee": a.assignee, "description": description,
+            "status": parse_status(a.status, ap),
+            "tags": [x for t in a.tag for x in t.split(",")]}
+    if a.id:
+        data["id"] = a.id
+    try:
+        task, _ = engine.save_task(data, create=True)
+    except ValidationError as e:
+        fail(str(e))
+    print(f"created {task['id']}  {task['title']}")
+
+
+def cmd_next(engine: Engine, argv: list[str], p: str) -> None:
+    ap = argparse.ArgumentParser(
+        prog=f"{p} REPO next", formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="What to work on: open tickets that nothing unfinished blocks, in progress\n"
+                    "first within each priority, highest priority first.",
+        epilog=f"example: {p} . next --mine -n 3")
+    add_filters(ap)
+    ap.add_argument("-n", type=int, metavar="N", help="show only the first N")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args(argv)
+    done = {t["id"] for t in engine.list_tasks(status="done")}
+    ready = [t for t in filtered(engine, a)
+             if t["status"] in ("todo", "in_progress") and all(b in done for b in t["blocked_by"])]
+    ready.sort(key=lambda t: (PRIORITIES.index(t["priority"]), t["status"] != "in_progress", t["id"]))
+    ready = ready[:a.n] if a.n else ready
+    if a.json:
+        print(json.dumps([public(t) for t in ready], ensure_ascii=False, indent=2))
+    elif not ready:
+        print("nothing ready: no open ticket without unfinished blockers")
+    else:
+        print(ticket_table(ready))
+
+
+SYNC_MESSAGES = {
+    "no_upstream": "this branch has no upstream; publish it with: {p} REPO save --set-upstream",
+    "no_remote": "this repository has no remote configured",
+    "diverged": "your branch and the remote have diverged; update with: {p} REPO pull --rebase",
+    "conflict": "update stopped: the same files changed on both sides; nothing was changed. "
+                "Resolve these files in git:",
+    "stash_conflict": "updated, but re-applying your local edits conflicted; they are kept in "
+                      "git stash. Files:",
+    "rejected": "the remote has newer changes; run {p} REPO pull first, then save again",
+    "push_failed": "push failed",
+    "failed": "update failed",
+}
+
+
+def sync_fail(e: SyncError, p: str):
+    msg = SYNC_MESSAGES.get(e.code, e.code).format(p=p)
+    detail = e.detail if e.detail and e.detail != e.code else ""
+    fail("\n".join(filter(None, [msg, *("  " + f for f in e.files), detail])))
+
+
+def cmd_pull(engine: Engine, argv: list[str], p: str) -> None:
+    ap = argparse.ArgumentParser(
+        prog=f"{p} REPO pull", description="The app's Update button: git pull --ff-only, then refresh "
+        "the index. Rebase is offered only if the branch diverged.")
+    ap.add_argument("--rebase", action="store_true", help="rebase local commits if the branch diverged")
+    a = ap.parse_args(argv)
+    try:
+        s = engine.pull(rebase=a.rebase)
+    except SyncError as e:
+        sync_fail(e, p)
+    if s["full"]:
+        print("updated; index rebuilt")
+    elif not s.changed:
+        print("already up to date")
+    else:
+        print(f"updated: {s['tasks_added']} added, {s['tasks_updated']} changed, "
+              f"{s['tasks_deleted']} removed, {s['comments_changed']} comments")
+
+
+def cmd_save(engine: Engine, argv: list[str], p: str) -> None:
+    ap = argparse.ArgumentParser(
+        prog=f"{p} REPO save", description="The app's Save work button: commit only the changes "
+        "under .todo/, then push. Never force-pushes, never stages other files.")
+    ap.add_argument("-m", "--message", help="commit message (default: tasks: update N task(s))")
+    ap.add_argument("--set-upstream", action="store_true",
+                    help="publish the branch (git push -u) if it has no upstream")
+    a = ap.parse_args(argv)
+    try:
+        res = engine.save_work(a.message, a.set_upstream)
+    except SyncError as e:
+        sync_fail(e, p)
+    print(f"committed: {res['message']}" if res["committed"] else "nothing to commit")
+    if res["pushed"]:
+        print("pushed")
 
 
 def run(argv: list[str], p: str, db_path=None, registry=None) -> list[str] | None:
@@ -524,7 +702,7 @@ def run(argv: list[str], p: str, db_path=None, registry=None) -> list[str] | Non
     if action == "serve":
         return ["--target", path, *rest[1:]]
     if action in ("-h", "--help"):
-        print(f"usage: {p} REPO [ls | board | serve | ID [edit | comment]]\n"
+        print(f"usage: {p} REPO [ls | board | next | new | pull | save | serve | ID [action]]\n"
               f"see {p} -h for the commands, or {p} REPO ls -h / board -h / ID -h")
         return None
     engine = open_engine(path, db_path)
@@ -534,6 +712,9 @@ def run(argv: list[str], p: str, db_path=None, registry=None) -> list[str] | Non
         cmd_ls(engine, rest[1:], p)
     elif action == "board":
         cmd_board(engine, rest[1:], p)
+    elif action in ("new", "next", "pull", "save"):
+        {"new": cmd_new, "next": cmd_next, "pull": cmd_pull, "save": cmd_save}[action](
+            engine, rest[1:], p)
     else:
         cmd_ticket(engine, action, rest[1:], p)
     return None

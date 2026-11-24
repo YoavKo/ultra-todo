@@ -178,3 +178,128 @@ def test_edit(proj, capsys, monkeypatch):
     monkeypatch.setenv("EDITOR", "false")
     with pytest.raises(SystemExit, match="exited"):
         proj("TKT-103", "edit")
+
+
+def test_new_ticket(proj, capsys, monkeypatch):
+    proj("new", "Fix", "the", "thing", "-p", "h", "-a", "carol", "-t", "ui,api", "-t", "x",
+         "-d", "details", "--status", "doing")
+    assert "created TKT-104  Fix the thing" in out(capsys)
+    t = tasks(proj)["TKT-104"]
+    assert (t["priority"], t["assignee"], t["status"], t["description"]) == (
+        "high", "carol", "in_progress", "details")
+    assert sorted(t["tags"]) == ["api", "ui", "x"]
+    proj("new", "Custom", "--id", "ABC-1")
+    assert "created ABC-1" in out(capsys)
+    with pytest.raises(SystemExit, match="already exists"):
+        proj("new", "Dup", "--id", "ABC-1")
+    monkeypatch.setenv("EDITOR", "sed -i '1s/^/From-editor\\n\\nbody-line/'")
+    proj("new")
+    assert "From-editor" in out(capsys)
+    assert tasks(proj)["TKT-105"]["description"] == "body-line"
+    monkeypatch.setenv("EDITOR", "true")
+    with pytest.raises(SystemExit, match="empty title"):
+        proj("new")
+    with pytest.raises(SystemExit):
+        proj("new", "x", "-p", "urgent")
+
+
+def test_status(proj, capsys):
+    proj("TKT-102", "start")
+    assert "to do → in progress" in out(capsys)
+    proj("TKT-102", "status", "done")
+    proj("TKT-102", "-s", "doing")
+    assert tasks(proj)["TKT-102"]["status"] == "in_progress"
+    proj("TKT-102", "done")
+    assert tasks(proj)["TKT-102"]["status"] == "done"
+    proj("TKT-102", "reopen")
+    assert tasks(proj)["TKT-102"]["status"] == "todo"
+    proj("TKT-102", "-s", "blocked")
+    assert tasks(proj)["TKT-102"]["status"] == "blocked"
+    out(capsys)
+    proj("TKT-102", "-s", "blocked")
+    assert "already blocked" in out(capsys)
+    for bad in (("status", "later"), ("status",), ("done", "now")):
+        with pytest.raises(SystemExit):
+            proj("TKT-102", *bad)
+
+
+def test_ls_open_and_mine(proj, capsys):
+    proj("ls", "--open", "--ids")
+    assert out(capsys).split() == ["TKT-101", "TKT-102"]
+    proj("ls", "--mine", "--ids")
+    assert out(capsys).strip() == ""
+    proj("TKT-103", "-s", "todo")
+    out(capsys)
+    from conftest import git
+    git(proj.repo, "config", "user.name", "Bob")
+    proj("ls", "--mine", "--ids")
+    assert out(capsys).split() == ["TKT-102"]
+
+
+def test_next(proj, capsys):
+    proj("next")
+    text = out(capsys)
+    assert "TKT-101" in text and "TKT-102" not in text and "TKT-103" not in text  # 102 blocked, 103 done
+    proj("TKT-101", "done")
+    out(capsys)
+    proj("next", "--json")
+    assert [t["id"] for t in json.loads(out(capsys))] == ["TKT-102"]  # its blocker is done now
+    proj("TKT-102", "done")
+    out(capsys)
+    proj("next")
+    assert "nothing ready" in out(capsys)
+
+
+@pytest.fixture
+def remote_proj(tmp_path, monkeypatch):
+    from conftest import git, init_repo
+    remote = tmp_path / "remote.git"
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(remote))
+    alice = init_repo(tmp_path / "alice")
+    write_task(alice, "TKT-1", title="shared")
+    commit_all(alice)
+    monkeypatch.setenv("COLUMNS", "120")
+
+    def go(repo, *args):
+        return cli.run([str(repo), *args], "utd", db_path=tmp_path / "db.sqlite3",
+                       registry=tmp_path / "repos.json")
+    go.alice, go.remote, go.tmp = alice, remote, tmp_path
+    return go
+
+
+def test_save_and_pull(remote_proj, capsys):
+    from conftest import git
+    go, alice = remote_proj, remote_proj.alice
+    with pytest.raises(SystemExit, match="no remote"):
+        go(alice, "save")
+    git(alice, "remote", "add", "origin", str(go.remote))
+    go(alice, "new", "Second")
+    out(capsys)
+    with pytest.raises(SystemExit, match="no upstream.*--set-upstream"):
+        go(alice, "save", "-m", "tasks: add second")  # commits locally, then cannot push
+    go(alice, "save", "--set-upstream")
+    assert out(capsys).splitlines() == ["nothing to commit", "pushed"]
+    assert git(alice, "log", "-1", "--format=%s") == "tasks: add second"
+    go(alice, "save")
+    assert out(capsys).strip() == "nothing to commit"
+    git(go.tmp, "clone", "-q", str(go.remote), str(go.tmp / "bob"))
+    bob = go.tmp / "bob"
+    git(bob, "config", "user.name", "Bob")
+    go(bob, "TKT-1", "-c", "-m", "hi from bob")
+    go(bob, "save", "-m", "bob comment")
+    out(capsys)
+    go(alice, "pull")
+    assert "updated: 0 added, 0 changed, 0 removed, 1 comments" in out(capsys)
+    go(alice, "pull")
+    assert "already up to date" in out(capsys)
+    go(alice, "new", "Third", "--id", "A-3")
+    go(bob, "new", "Bobs", "--id", "B-1")
+    go(bob, "save")
+    out(capsys)
+    with pytest.raises(SystemExit, match="newer changes.*pull first"):
+        go(alice, "save")  # committed locally, but the push is rejected
+    with pytest.raises(SystemExit, match="diverged.*pull --rebase"):
+        go(alice, "pull")
+    go(alice, "pull", "--rebase")
+    go(alice, "save")
+    assert "pushed" in out(capsys)

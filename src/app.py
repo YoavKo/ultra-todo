@@ -415,7 +415,11 @@ def commands_help() -> str:
     rows = [(f"{p} REPO", "project info: branch, sync state, ticket counts"),
             (f"{p} REPO ls", "list the tickets as a table"),
             (f"{p} REPO board", "the kanban board in the terminal"),
+            (f"{p} REPO next", "what to work on: open, unblocked tickets by priority"),
+            (f"{p} REPO new [TITLE] [flags]", "create a ticket (-p -a -t -d --status)"),
+            (f"{p} REPO pull | save", "Update / Save work: pull, or commit .todo/ and push"),
             (f"{p} REPO ID", "show a ticket"),
+            (f"{p} REPO ID status|-s VALUE", "todo | doing | done | blocked (also: start, done, reopen)"),
             (f"{p} REPO ID edit|-e", "open the ticket file in $EDITOR"),
             (f"{p} REPO ID comment|-c", "add a comment (-m TEXT, or $EDITOR / stdin)"),
             (f"{p} REPO ID priority|-p VALUE", "set the priority: high, medium or low"),
@@ -537,7 +541,7 @@ def main(argv=None) -> None:
         argv = ["-h"]
     ap = argparse.ArgumentParser(
         prog=prog(), description="Local GitOps task manager",
-        usage="utd [REPO [ls | board | serve | ID [edit | comment]] | ls | open NAME|NUMBER | forget NAME|NUMBER,...] [flags]" if utd else None,
+        usage="utd [REPO [ls | board | next | new | pull | save | serve | ID [action]] | ls | open NAME|NUMBER | forget NAME|NUMBER,...] [flags]" if utd else None,
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=commands_help())
     ap.add_argument("--target", required=not utd,
                     help=argparse.SUPPRESS if utd else "path of the git repository to manage")
