@@ -23,6 +23,24 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 - **Several repos** – serve many at once (free ports picked automatically); `ls` / `open` / `forget` manage the list of known repos, with a `utd` bash shortcut and tab completion
 - Hebrew + English: translated UI, RTL layout, `dir="auto"` for mixed-language content; language set with `--lang` and/or the in-app toggle
 
+## Screenshots
+
+**Kanban board** – tasks by status, with priority, assignee, tags and dependency badges; search and filter on top.
+
+![Kanban board](docs/screenshots/board.png)
+
+**List view**
+
+![List view](docs/screenshots/list.png)
+
+**Adding a task**
+
+![New task page](docs/screenshots/task-new.png)
+
+**Command line** – listing known repos and the built-in help.
+
+![CLI usage](docs/screenshots/cli.png)
+
 ## Install and run (uv)
 
 ```bash
