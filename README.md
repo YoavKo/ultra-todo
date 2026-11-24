@@ -245,8 +245,8 @@ uv run pybabel compile -d src/translations
 ## Development
 
 ```bash
-uv run pytest                      # engine, sync (temp bare remote + 2 clones), routes, i18n, repos list
+uv run pytest                      # engine, sync (temp bare remote + 2 clones), routes, i18n, repos list, terminal commands (incl. save/pull against a temp remote)
 uv run ultra-todo --target . --debug   # Flask dev server with reload
 ```
 
-Layout: `src/engine.py` (files, git, SQLite index, sync), `src/graph.py` (DAG), `src/repos.py` (known-repos list), `src/i18n.py`, `src/app.py` (routes + CLI), `src/templates/`, `src/static/`, `src/translations/`.
+Layout: `src/engine.py` (files, git, SQLite index, sync), `src/graph.py` (DAG), `src/repos.py` (known-repos list), `src/i18n.py`, `src/cli.py` (the `REPO ls|board|next|new|pull|save|ID …` terminal commands), `src/app.py` (routes, serve, `ls`/`open`/`forget`), `shell/utd.bash` (the `utd` shortcut + completion), `docs/screenshots/` (README images), `src/templates/`, `src/static/`, `src/translations/`.
