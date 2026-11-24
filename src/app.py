@@ -419,6 +419,7 @@ def commands_help() -> str:
             (f"{p} REPO next", "what to work on: open, unblocked tickets by priority"),
             (f"{p} REPO new [TITLE] [flags]", "create a ticket (-p -a -t -d --status)"),
             (f"{p} REPO pull | save", "Update / Save work: pull, or commit .todo/ and push"),
+            (f"{p} REPO migrate", "move tickets from the old ID.json5 layout to ID/main.json5"),
             (f"{p} REPO ID", "show a ticket"),
             (f"{p} REPO ID status|-s VALUE", "todo | doing | done | blocked (also: start, done, reopen)"),
             (f"{p} REPO ID edit|-e", "open the ticket file in $EDITOR"),
@@ -542,7 +543,7 @@ def main(argv=None) -> None:
         argv = ["-h"]
     ap = argparse.ArgumentParser(
         prog=prog(), description="Local GitOps task manager",
-        usage="utd [REPO [ls | board | next | new | pull | save | serve | ID [action]] | ls | open NAME|NUMBER | forget NAME|NUMBER,...] [flags]" if utd else None,
+        usage="utd [REPO [ls | board | next | new | pull | save | migrate | serve | ID [action]] | ls | open NAME|NUMBER | forget NAME|NUMBER,...] [flags]" if utd else None,
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=commands_help())
     ap.add_argument("--target", required=not utd,
                     help=argparse.SUPPRESS if utd else "path of the git repository to manage")
@@ -568,6 +569,12 @@ def main(argv=None) -> None:
         s = engine.refresh()
     except EngineError as e:
         raise SystemExit(f"error: {e}")
+    old_layout = engine.legacy_tasks()
+    if old_layout:
+        msg = (f"{len(old_layout)} ticket(s) use the old flat file layout (.todo/tasks/ID.json5); "
+               f"move them with: {prog()} {engine.project} migrate")
+        engine.warnings.append(msg)
+        log.warning(msg)
     log.info("%s: %s", engine.project, "full scan" if s["full"]
              else ("refreshed" if s.changed else "cache hit"))
     if args.db is None:

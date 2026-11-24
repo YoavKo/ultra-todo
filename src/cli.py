@@ -261,6 +261,28 @@ def filtered(engine: Engine, a: argparse.Namespace) -> list[dict]:
     return tasks
 
 
+def cmd_migrate(engine: Engine, argv: list[str], p: str) -> None:
+    ap = argparse.ArgumentParser(
+        prog=f"{p} REPO migrate",
+        description="Move tickets from the old layout (.todo/tasks/ID.json5) to the current one\n"
+                    "(.todo/tasks/ID/main.json5, next to its comments and attachments). Uses git mv,\n"
+                    "so history follows the file. Nothing is committed: review, then save.")
+    ap.parse_args(argv)
+    res = engine.migrate_layout()
+    if not any(res.values()):
+        print("nothing to migrate")
+    if res["moved"]:
+        print(f"moved {len(res['moved'])} ticket(s) to <id>/main.json5")
+    if res["duplicates"]:
+        print(f"removed {len(res['duplicates'])} old file(s) identical to the new ones: "
+              + ", ".join(res["duplicates"]))
+    if res["conflicts"]:
+        fail("both layouts exist with different contents, left untouched: "
+             + ", ".join(res["conflicts"]) + "\ncompare <id>.json5 with <id>/main.json5 and delete one")
+    if res["moved"] or res["duplicates"]:
+        print(f"not committed yet: run `{p} REPO save` (or commit with git)")
+
+
 def cmd_info(engine: Engine, argv: list[str], p: str) -> None:
     ap = argparse.ArgumentParser(prog=f"{p} REPO", description="Project info: branch, sync state "
                                  "and ticket counts.")
@@ -273,7 +295,9 @@ def cmd_info(engine: Engine, argv: list[str], p: str) -> None:
     for t in openn:
         if t["assignee"]:
             people[t["assignee"]] = people.get(t["assignee"], 0) + 1
+    legacy = engine.legacy_tasks()
     info = {"name": Path(engine.project).name, "path": engine.project, **sync,
+            "legacy_layout_tickets": len(legacy),
             "tickets": len(tasks), "by_status": {s: count("status", s) for s in STATUSES},
             "open_by_priority": {q: sum(1 for t in openn if t["priority"] == q) for q in PRIORITIES},
             "open_by_assignee": people, "tags": {x["tag"]: x["count"] for x in engine.all_tags()}}
@@ -292,6 +316,9 @@ def cmd_info(engine: Engine, argv: list[str], p: str) -> None:
     print(f"open by priority:  {join(info['open_by_priority'])}")
     print(f"open by assignee:  {join(people)}")
     print(f"tags:       {join(info['tags'])}")
+    if legacy:
+        print(paint(f"{len(legacy)} ticket(s) use the old flat file layout; "
+                    f"run: {p} REPO migrate", "yellow"))
 
 
 def cmd_ls(engine: Engine, argv: list[str], p: str) -> None:
@@ -761,7 +788,7 @@ def run(argv: list[str], p: str, db_path=None, registry=None) -> list[str] | Non
     if action == "serve":
         return ["--target", path, *rest[1:]]
     if action in ("-h", "--help"):
-        print(f"usage: {p} REPO [ls | board | next | new | pull | save | serve | ID [action]]\n"
+        print(f"usage: {p} REPO [ls | board | next | new | pull | save | migrate | serve | ID [action]]\n"
               f"see {p} -h for the commands, or {p} REPO ls -h / board -h / ID -h")
         return None
     engine = open_engine(path, db_path)
@@ -771,8 +798,9 @@ def run(argv: list[str], p: str, db_path=None, registry=None) -> list[str] | Non
         cmd_ls(engine, rest[1:], p)
     elif action == "board":
         cmd_board(engine, rest[1:], p)
-    elif action in ("new", "next", "pull", "save"):
-        {"new": cmd_new, "next": cmd_next, "pull": cmd_pull, "save": cmd_save}[action](
+    elif action in ("new", "next", "pull", "save", "migrate"):
+        {"new": cmd_new, "next": cmd_next, "pull": cmd_pull, "save": cmd_save,
+         "migrate": cmd_migrate}[action](
             engine, rest[1:], p)
     else:
         cmd_ticket(engine, action, rest[1:], p)

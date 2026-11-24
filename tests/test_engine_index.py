@@ -164,3 +164,45 @@ def test_nested_file_wins_over_legacy(repo, make_engine):
     assert eng.get_task("T-1")["title"] == "nested"
     eng.delete_task("T-1")
     assert (repo / ".todo/tasks/T-1.json5").exists()  # only the nested ticket and its dir go
+
+
+def _flat(repo, tid, title="flat"):
+    p = repo / f".todo/tasks/{tid}.json5"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"id": tid, "title": title}))
+    return p
+
+
+def test_migrate_layout(repo, make_engine):
+    _flat(repo, "A-1")
+    _flat(repo, "B-1")
+    commit_all(repo)
+    _flat(repo, "C-1")  # not tracked yet
+    eng = make_engine()
+    eng.add_comment("A-1", "keeps its comment")
+    assert eng.legacy_tasks() == ["A-1", "B-1", "C-1"]
+    res = eng.migrate_layout()
+    assert res == {"moved": ["A-1", "B-1", "C-1"], "duplicates": [], "conflicts": []}
+    assert eng.legacy_tasks() == []
+    for tid in ("A-1", "B-1", "C-1"):
+        assert (repo / f".todo/tasks/{tid}/main.json5").exists()
+        assert not (repo / f".todo/tasks/{tid}.json5").exists()
+    assert {t["id"] for t in eng.list_tasks()} == {"A-1", "B-1", "C-1"}
+    assert len(eng.get_comments("A-1")) == 1
+    git(repo, "add", "-A")  # tracked files show up as renames, history follows
+    assert "R  .todo/tasks/A-1.json5 -> .todo/tasks/A-1/main.json5" in git(repo, "status", "--short")
+    assert eng.migrate_layout() == {"moved": [], "duplicates": [], "conflicts": []}  # idempotent
+
+
+def test_migrate_duplicates_and_conflicts(repo, make_engine):
+    write_task(repo, "D-1", title="same")
+    (repo / ".todo/tasks/D-1.json5").write_text((repo / ".todo/tasks/D-1/main.json5").read_text())
+    write_task(repo, "E-1", title="nested")
+    _flat(repo, "E-1", "different")
+    commit_all(repo)
+    eng = make_engine()
+    res = eng.migrate_layout()
+    assert res == {"moved": [], "duplicates": ["D-1"], "conflicts": ["E-1"]}
+    assert not (repo / ".todo/tasks/D-1.json5").exists()
+    assert (repo / ".todo/tasks/E-1.json5").exists()  # left for a human
+    assert eng.get_task("E-1")["title"] == "nested"

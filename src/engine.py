@@ -627,6 +627,41 @@ class Engine:
         legacy = self.tasks_dir / f"{valid_id(task_id)}.json5"
         return legacy if legacy.exists() and not new.exists() else new
 
+    def legacy_tasks(self) -> list[str]:
+        """Ids of tickets still in the old flat layout (<id>.json5 instead of <id>/main.json5)."""
+        if not self.tasks_dir.is_dir():
+            return []
+        return sorted(f.stem for f in self.tasks_dir.glob("*.json5") if ID_RE.match(f.stem))
+
+    def migrate_layout(self) -> dict[str, list[str]]:
+        """Move every flat <id>.json5 to <id>/main.json5 (git mv when tracked, so history
+        follows). Nothing is committed. A flat file whose nested twin already exists is
+        removed if identical, else reported as a conflict and left alone."""
+        out: dict[str, list[str]] = {"moved": [], "duplicates": [], "conflicts": []}
+        with self.lock:
+            for tid in self.legacy_tasks():
+                old = self.tasks_dir / f"{tid}.json5"
+                new = self.task_dir(tid) / "main.json5"
+                tracked = bool(run_git(self.root, "ls-files", "--error-unmatch", "--",
+                                       self._rel(old), check=False).returncode == 0)
+                if new.exists():
+                    if new.read_bytes() != old.read_bytes():
+                        out["conflicts"].append(tid)
+                        continue
+                    run_git(self.root, *(("rm", "-q", "--") if tracked else ("clean", "-fq", "--")),
+                            self._rel(old))
+                    old.unlink(missing_ok=True)
+                    out["duplicates"].append(tid)
+                    continue
+                new.parent.mkdir(parents=True, exist_ok=True)
+                if tracked:
+                    run_git(self.root, "mv", "--", self._rel(old), self._rel(new))
+                else:
+                    os.replace(old, new)
+                out["moved"].append(tid)
+            self.refresh()
+        return out
+
     def task_dir(self, task_id: str) -> Path:
         return self.tasks_dir / valid_id(task_id)
 

@@ -331,3 +331,23 @@ def test_attach_and_detach(proj, capsys, tmp_path):
     proj("new", "With file", "--attach", str(note))
     assert "created TKT-104" in out(capsys)
     assert [a["name"] for a in tasks(proj)["TKT-104"]["attachments"]] == ["note.txt"]
+
+
+def test_migrate_command_and_info_hint(proj, capsys):
+    flat = proj.repo / ".todo/tasks/OLD-1.json5"
+    flat.write_text(json.dumps({"id": "OLD-1", "title": "flat one"}))
+    proj()
+    assert "1 ticket(s) use the old flat file layout" in out(capsys)
+    proj("--json")
+    assert json.loads(out(capsys))["legacy_layout_tickets"] == 1
+    proj("migrate")
+    text = out(capsys)
+    assert "moved 1 ticket(s)" in text and "not committed yet" in text
+    assert (proj.repo / ".todo/tasks/OLD-1/main.json5").exists() and not flat.exists()
+    proj()
+    assert "old flat file layout" not in out(capsys)
+    proj("migrate")
+    assert "nothing to migrate" in out(capsys)
+    flat.write_text(json.dumps({"id": "OLD-1", "title": "other"}))
+    with pytest.raises(SystemExit, match="different contents.*OLD-1"):
+        proj("migrate")
