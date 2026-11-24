@@ -18,13 +18,13 @@ def eng(repo, make_engine):
 def test_create_writes_readable_file(eng, repo):
     t, err = eng.save_task({"title": "משימה חדשה", "tags": ["UI", "ui"]}, create=True)
     assert err is None and t["id"] == "TKT-102"
-    text = (repo / ".todo/tasks/TKT-102.json5").read_text("utf-8")
+    text = (repo / ".todo/tasks/TKT-102/main.json5").read_text("utf-8")
     assert "משימה חדשה" in text and text.endswith("\n")
     assert json.loads(text)["tags"] == ["UI"]
 
 
 def test_update_keeps_unknown_fields(eng, repo):
-    p = repo / ".todo/tasks/TKT-101.json5"
+    p = repo / ".todo/tasks/TKT-101/main.json5"
     p.write_text(json.dumps({"id": "TKT-101", "title": "first", "estimate": 3}))
     eng.save_task({"id": "TKT-101", "status": "done"})
     data = json.loads(p.read_text())
@@ -59,7 +59,7 @@ def test_delete_task_cleans_dependents(eng, repo):
     eng.delete_task("TKT-101")
     assert not (repo / ".todo/tasks/TKT-101").exists()
     assert eng.get_task("B")["blocked_by"] == []
-    assert json.loads((repo / ".todo/tasks/B.json5").read_text())["blocked_by"] == []
+    assert json.loads((repo / ".todo/tasks/B/main.json5").read_text())["blocked_by"] == []
 
 
 def test_auto_commit(repo, make_engine):
@@ -127,6 +127,29 @@ def test_priority_default_validation_and_order(eng, repo):
     eng.save_task({"id": "H", "title": "h", "priority": "high"}, create=True)
     assert [t["id"] for t in eng.list_tasks()] == ["H", "TKT-101", "L"]
     assert [t["id"] for t in eng.list_tasks(priority="high")] == ["H"]
-    assert json.loads((repo / ".todo/tasks/H.json5").read_text())["priority"] == "high"
+    assert json.loads((repo / ".todo/tasks/H/main.json5").read_text())["priority"] == "high"
     with pytest.raises(ValidationError):
         eng.save_task({"id": "H", "priority": "urgent"})
+
+
+def test_comment_id_format_and_order(eng, repo):
+    import re
+    a, _ = eng.add_comment("TKT-101", "first")
+    b, _ = eng.add_comment("TKT-101", "second")
+    assert re.fullmatch(r"\d{8}-\d{6}-[0-9a-f]{6}", a["id"])
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z", a["created_at"])
+    assert (repo / f".todo/tasks/TKT-101/comments/{a['id']}.json5").exists()
+    assert [c["body"] for c in eng.get_comments("TKT-101")] == ["second", "first"]  # same second, still ordered
+
+
+def test_legacy_comment_ids_still_work(eng, repo):
+    old = "20261018T100000123Z-ab12cd"
+    p = repo / f".todo/tasks/TKT-101/comments/{old}.json5"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"id": old, "author": "x", "created_at": "2026-10-18T10:00:00Z",
+                             "edited_at": None, "body": "old one", "attachments": []}))
+    eng.refresh()
+    assert [c["id"] for c in eng.get_comments("TKT-101")] == [old]
+    assert eng.comment_path("TKT-101", old) == p
+    with pytest.raises(ValidationError):
+        eng.comment_path("TKT-101", "../x")

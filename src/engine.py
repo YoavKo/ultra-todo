@@ -196,12 +196,16 @@ def clean_task(raw: dict[str, Any], task_id: str | None = None) -> dict[str, Any
 # paths <-> entities
 # --------------------------------------------------------------------------
 
-_TASK_PATH = re.compile(r"^\.todo/tasks/([A-Za-z0-9_-]+)\.json5$")
+# a ticket lives in <id>/main.json5; the old flat <id>.json5 is still read (see `ultra-todo migrate`)
+_TASK_PATH = re.compile(r"^\.todo/tasks/([A-Za-z0-9_-]+)/main\.json5$")
+_LEGACY_TASK_PATH = re.compile(r"^\.todo/tasks/([A-Za-z0-9_-]+)\.json5$")
+# comment id: 20261018-100000-ab12cd (UTC time + random hex); the old 20261018T100000123Z-ab12cd is accepted
+COMMENT_ID_RE = re.compile(r"^(?:\d{8}-\d{6}|[0-9TZ]+)-[0-9a-f]+$")
 _COMMENT_PATH = re.compile(r"^\.todo/tasks/([A-Za-z0-9_-]+)/comments/([^/]+)\.json5$")
 
 
 def classify_path(rel: str) -> tuple[str, str, str | None] | None:
-    m = _TASK_PATH.match(rel)
+    m = _TASK_PATH.match(rel) or _LEGACY_TASK_PATH.match(rel)
     if m:
         return ("task", m.group(1), None)
     m = _COMMENT_PATH.match(rel)
@@ -420,7 +424,7 @@ class Engine:
         summary["full"] = True
         paths: list[str] = []
         if self.tasks_dir.is_dir():
-            for f in self.tasks_dir.glob("*.json5"):
+            for f in [*self.tasks_dir.glob("*.json5"), *self.tasks_dir.glob("*/main.json5")]:
                 paths.append(f.relative_to(self.root).as_posix())
             for f in self.tasks_dir.glob("*/comments/*.json5"):
                 paths.append(f.relative_to(self.root).as_posix())
@@ -450,6 +454,7 @@ class Engine:
                     self.warnings.append(msg)
 
     def _sync_task(self, db, tid: str, path: Path, summary: Summary) -> None:
+        path = self.task_path(tid)  # whichever layout the ticket is in (new wins if both exist)
         existed = db.execute("SELECT 1 FROM tasks WHERE project_path=? AND id=?",
                              (self.project, tid)).fetchone()
         if not path.is_file():
@@ -598,7 +603,10 @@ class Engine:
 
     # ---- mutations ---------------------------------------------------
     def task_path(self, task_id: str) -> Path:
-        return self.tasks_dir / f"{valid_id(task_id)}.json5"
+        """The ticket's file: <id>/main.json5, or the old flat <id>.json5 if only that exists."""
+        new = self.task_dir(task_id) / "main.json5"
+        legacy = self.tasks_dir / f"{valid_id(task_id)}.json5"
+        return legacy if legacy.exists() and not new.exists() else new
 
     def task_dir(self, task_id: str) -> Path:
         return self.tasks_dir / valid_id(task_id)
@@ -741,7 +749,7 @@ class Engine:
         return f"{name} <{email}>" if email else name
 
     def comment_path(self, task_id: str, cid: str) -> Path:
-        if not re.match(r"^[0-9TZ]+-[0-9a-f]+$", cid or ""):
+        if not COMMENT_ID_RE.match(cid or ""):
             raise ValidationError("invalid comment id")
         return self.task_dir(task_id) / "comments" / f"{cid}.json5"
 
@@ -799,12 +807,13 @@ class Engine:
             self._require_task(task_id)
             body = unicodedata.normalize("NFC", (body or "").strip())
             now = datetime.now(timezone.utc)
-            cid = f"{now:%Y%m%dT%H%M%S}{now.microsecond // 1000:03d}Z-{secrets.token_hex(3)}"
+            cid = f"{now:%Y%m%d-%H%M%S}-{secrets.token_hex(3)}"
             atts = self._store_files(task_id, cid, files)
             if not body and not atts:
                 raise ValidationError("comment is empty")
             c = {"id": cid, "author": self.author_identity(),
-                 "created_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                 # milliseconds keep comments added in the same second in order
+                 "created_at": f"{now:%Y-%m-%dT%H:%M:%S}.{now.microsecond // 1000:03d}Z",
                  "edited_at": None, "body": body, "attachments": atts}
             path = self.comment_path(task_id, cid)
             dump_file(path, c)

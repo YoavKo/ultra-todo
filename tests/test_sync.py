@@ -72,7 +72,7 @@ def test_rebase_conflict_is_aborted(world):
     with pytest.raises(SyncError) as e:
         b.pull(rebase=True)
     assert e.value.code == "conflict"
-    assert e.value.files == [".todo/tasks/TKT-1.json5"]
+    assert e.value.files == [".todo/tasks/TKT-1/main.json5"]
     assert git(b.root, "status", "--porcelain") == ""
     assert not (b.root / ".git/rebase-merge").exists()
     assert b.get_task("TKT-1")["title"] == "bob title"

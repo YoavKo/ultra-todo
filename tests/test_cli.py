@@ -161,7 +161,7 @@ def test_comment(proj, capsys, monkeypatch):
 
 
 def test_edit(proj, capsys, monkeypatch):
-    path = proj.repo / ".todo" / "tasks" / "TKT-103.json5"
+    path = proj.repo / ".todo" / "tasks" / "TKT-103" / "main.json5"
     monkeypatch.setenv("EDITOR", "sed -i s/Docs/Documentation/")
     proj("TKT-103", "edit")
     assert "updated" in out(capsys) and "Documentation" in path.read_text()

@@ -21,7 +21,7 @@ def init_repo(path: Path) -> Path:
 
 def write_task(repo: Path, tid: str, **fields) -> Path:
     data = {"id": tid, "title": fields.pop("title", tid), "status": "todo", **fields}
-    p = repo / ".todo" / "tasks" / f"{tid}.json5"
+    p = repo / ".todo" / "tasks" / tid / "main.json5"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     return p

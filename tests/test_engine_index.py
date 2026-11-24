@@ -34,7 +34,7 @@ def test_differential_hydration_add_modify_delete(repo, make_engine):
     eng = make_engine()
     eng.refresh()
     write_task(repo, "TKT-1", title="changed")
-    (repo / ".todo/tasks/TKT-2.json5").unlink()
+    (repo / ".todo/tasks/TKT-2/main.json5").unlink()
     write_task(repo, "TKT-3")
     commit_all(repo)
     s = eng.refresh()
@@ -49,8 +49,9 @@ def test_rename_handled(repo, make_engine):
     commit_all(repo)
     eng = make_engine()
     eng.refresh()
-    git(repo, "mv", ".todo/tasks/OLD.json5", ".todo/tasks/NEW.json5")
-    (repo / ".todo/tasks/NEW.json5").write_text(json.dumps({"id": "NEW", "title": "x"}))
+    (repo / ".todo/tasks/NEW").mkdir()
+    git(repo, "mv", ".todo/tasks/OLD/main.json5", ".todo/tasks/NEW/main.json5")
+    (repo / ".todo/tasks/NEW/main.json5").write_text(json.dumps({"id": "NEW", "title": "x"}))
     commit_all(repo)
     eng.refresh()
     assert [t["id"] for t in eng.list_tasks()] == ["NEW"]
@@ -87,7 +88,8 @@ def test_empty_repo_without_commits(repo, make_engine):
 
 def test_bad_file_skipped_with_warning(repo, make_engine):
     write_task(repo, "TKT-1")
-    (repo / ".todo/tasks/BAD.json5").write_text("{ nope")
+    (repo / ".todo/tasks/BAD").mkdir(parents=True)
+    (repo / ".todo/tasks/BAD/main.json5").write_text("{ nope")
     commit_all(repo)
     eng = make_engine()
     eng.refresh()
@@ -131,3 +133,34 @@ def test_cycle_detection():
     assert cycle_after_setting({"a": ["b"]}, "b", ["a"]) == ["a", "b", "a"]
     deep = {str(i): [str(i + 1)] for i in range(5000)}
     assert find_cycle(deep) is None
+
+
+def test_legacy_flat_layout_still_read_and_written_in_place(repo, make_engine):
+    legacy = repo / ".todo/tasks/OLD-1.json5"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text(json.dumps({"id": "OLD-1", "title": "flat"}))
+    write_task(repo, "NEW-1", title="nested")
+    commit_all(repo)
+    eng = make_engine()
+    eng.refresh()
+    assert {t["id"]: t["title"] for t in eng.list_tasks()} == {"OLD-1": "flat", "NEW-1": "nested"}
+    assert eng.task_path("OLD-1") == legacy
+    assert eng.task_path("NEW-1") == repo / ".todo/tasks/NEW-1/main.json5"
+    eng.save_task({"id": "OLD-1", "title": "flat edited"})  # stays in its own file
+    assert json.loads(legacy.read_text())["title"] == "flat edited"
+    assert not (repo / ".todo/tasks/OLD-1/main.json5").exists()
+    eng.add_comment("OLD-1", "works beside the flat file")
+    assert len(eng.get_comments("OLD-1")) == 1
+    legacy.write_text(json.dumps({"id": "OLD-1", "title": "by hand"}))  # edit detected
+    eng.refresh()
+    assert eng.get_task("OLD-1")["title"] == "by hand"
+
+
+def test_nested_file_wins_over_legacy(repo, make_engine):
+    write_task(repo, "T-1", title="nested")
+    (repo / ".todo/tasks/T-1.json5").write_text(json.dumps({"id": "T-1", "title": "flat"}))
+    eng = make_engine()
+    eng.refresh()
+    assert eng.get_task("T-1")["title"] == "nested"
+    eng.delete_task("T-1")
+    assert (repo / ".todo/tasks/T-1.json5").exists()  # only the nested ticket and its dir go

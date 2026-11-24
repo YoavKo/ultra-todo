@@ -133,9 +133,9 @@ def test_editing_task_keeps_blockers(client):
 
 def test_remove_dangling_blocker(client, repo):
     import json
-    p = repo / ".todo/tasks/TKT-102.json5"
+    p = repo / ".todo/tasks/TKT-102/main.json5"
     d = json.loads(p.read_text()); d["blocked_by"] = ["TKT-101"]; p.write_text(json.dumps(d))
-    (repo / ".todo/tasks/TKT-101.json5").unlink()
+    (repo / ".todo/tasks/TKT-101/main.json5").unlink()
     html = client.get("/task/TKT-102").get_data(as_text=True)
     assert "/task/TKT-102/blocked_by/TKT-101/delete" in html
 
