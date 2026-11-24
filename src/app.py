@@ -22,6 +22,7 @@ from markupsafe import Markup, escape
 from engine import (PRIORITIES, STATUSES, CycleError, Engine, EngineError, GitError, NotFound,
                     SyncError, ValidationError)
 from i18n import COOKIE, SUPPORTED, init_babel, text_dir
+import cli
 import repos
 
 log = logging.getLogger("ultra-todo")
@@ -410,17 +411,29 @@ def prog() -> str:
 
 def commands_help() -> str:
     p = prog()
-    serve = f"{p} [PATH] [flags]" if p == "utd" else f"{p} --target PATH [flags]"
-    rows = [(serve, "serve a repo" + (" (PATH defaults to .)" if p == "utd" else "")),
+    utd = p == "utd"
+    rows = [(f"{p} REPO", "project info: branch, sync state, ticket counts"),
+            (f"{p} REPO ls", "list the tickets as a table"),
+            (f"{p} REPO board", "the kanban board in the terminal"),
+            (f"{p} REPO ID", "show a ticket"),
+            (f"{p} REPO ID edit|-e", "open the ticket file in $EDITOR"),
+            (f"{p} REPO ID comment|-c", "add a comment (-m TEXT, or $EDITOR / stdin)"),
+            (f"{p} REPO ID priority|-p VALUE", "set the priority: high, medium or low"),
+            (f"{p} REPO ID blocked|-b IDS", "this ticket blocks IDS (remove: -rb)"),
+            (f"{p} REPO ID block-by|-bb IDS", "this ticket is blocked by IDS (remove: -rbb)"),
+            (f"{p} REPO serve [flags]" if utd else f"{p} --target PATH [flags]",
+             "serve a repo in the browser"),
             (f"{p} ls", "list known repos: number, last opened, [open, done], name, path"),
             (f"{p} open NAME|NUMBER [flags]", "serve a known repo by name or ls number"),
             (f"{p} forget NAME|NUMBER,...", "remove repos from the list (files untouched)")]
     width = max(len(c) for c, _ in rows)
-    return "commands:\n" + "\n".join(f"  • {c:<{width}}  {d}" for c, d in rows)
+    return ("commands:\n" + "\n".join(f"  • {c:<{width}}  {d}" for c, d in rows)
+            + f"\n\nREPO is . (the current repo), a path, or a known repo's name or {p} ls number."
+            + f"\nTab completes names and ticket ids; {p} REPO ls -h, board -h, ID -h for details.")
 
 
 def serve_hint() -> str:
-    return f"{prog()} PATH" if prog() == "utd" else f"{prog()} --target PATH"
+    return "utd . serve" if prog() == "utd" else f"{prog()} --target PATH"
 
 
 def cmd_ls(argv: list[str]) -> None:
@@ -506,6 +519,10 @@ def main(argv=None) -> None:
         return cmd_ls(argv[1:])
     if argv[:1] == ["forget"]:
         return cmd_forget(argv[1:])
+    if argv and not argv[0].startswith("-") and argv[0] not in cli.COMMANDS:
+        argv = cli.run(argv, prog())
+        if argv is None:
+            return
     if argv[:1] == ["open"]:
         if {"-h", "--help"} & set(argv[1:]):
             return open_parser().print_help()
@@ -516,11 +533,13 @@ def main(argv=None) -> None:
         except EngineError as e:
             raise SystemExit(f"error: {e}")
     utd = prog() == "utd"
+    if utd and not argv:
+        argv = ["-h"]
     ap = argparse.ArgumentParser(
         prog=prog(), description="Local GitOps task manager",
-        usage="utd [PATH | ls | open NAME|NUMBER | forget NAME|NUMBER,...] [flags]" if utd else None,
+        usage="utd [REPO [ls | board | serve | ID [edit | comment]] | ls | open NAME|NUMBER | forget NAME|NUMBER,...] [flags]" if utd else None,
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=commands_help())
-    ap.add_argument("--target", required=True,
+    ap.add_argument("--target", required=not utd,
                     help=argparse.SUPPRESS if utd else "path of the git repository to manage")
     ap.add_argument("--lang", choices=SUPPORTED, help="default UI language")
     ap.add_argument("--host", default="127.0.0.1")
@@ -533,6 +552,8 @@ def main(argv=None) -> None:
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args(argv)
+    if args.target is None:
+        ap.error("no command; to serve the current directory: utd . serve [flags]")
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO,
                         format="%(levelname)s %(message)s")
     try:

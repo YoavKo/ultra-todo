@@ -1,0 +1,539 @@
+"""Repo-scoped terminal commands: ``utd REPO [ls | board | serve | ID [edit | comment]]``.
+
+REPO is ``.`` (or any path) or the name / ``ls`` number of a known repo. Everything except
+``serve``, ``ID edit`` and ``ID comment`` is read-only.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+import textwrap
+import unicodedata
+from datetime import datetime
+from pathlib import Path
+
+import repos
+from engine import (PRIORITIES, STATUSES, Engine, EngineError, NotFound, ValidationError,
+                    clean_task, load_file)
+
+# first words that are not a REPO (handled by app.main)
+COMMANDS = ("ls", "open", "forget")
+ACTIONS = ("ls", "board", "serve")
+STATUS_LABEL = {"todo": "To do", "in_progress": "In progress", "done": "Done", "blocked": "Blocked"}
+PRIORITY_MARK = {"high": "▲", "medium": "●", "low": "▼"}
+BOARD_ORDER = ("todo", "in_progress", "done", "blocked")
+_COLORS = {"red": "31", "green": "32", "yellow": "33", "blue": "34", "dim": "2", "bold": "1"}
+STATUS_COLOR = {"todo": None, "in_progress": "blue", "done": "green", "blocked": "red"}
+PRIORITY_COLOR = {"high": "red", "medium": "yellow", "low": "dim"}
+
+
+# ---- terminal helpers ------------------------------------------------------
+def use_color() -> bool:
+    return sys.stdout.isatty() and "NO_COLOR" not in os.environ
+
+
+def paint(text: str, color: str | None) -> str:
+    return f"\x1b[{_COLORS[color]}m{text}\x1b[0m" if color and use_color() else text
+
+
+def term_width() -> int:
+    return shutil.get_terminal_size((100, 24)).columns
+
+
+def dw(s: str) -> int:
+    """Display width: wide CJK = 2, combining marks (e.g. niqqud) = 0."""
+    return sum(0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in "WF" else 1
+               for c in s)
+
+
+def clip(s: str, width: int) -> str:
+    if dw(s) <= width:
+        return s
+    out, used = "", 0
+    for c in s:
+        w = dw(c)
+        if used + w > width - 1:
+            break
+        out, used = out + c, used + w
+    return out + "…"
+
+
+def pad(s: str, width: int) -> str:
+    return s + " " * max(0, width - dw(s))
+
+
+def wrap(s: str, width: int, max_lines: int) -> list[str]:
+    lines = textwrap.wrap(s, width=width, break_long_words=True) or [""]
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = clip(lines[-1] + "…", width)
+    return lines
+
+
+def local_time(iso: str | None) -> str:
+    if not iso:
+        return "-"
+    try:
+        return datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone().strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return iso
+
+
+def fail(msg: str):
+    raise SystemExit(f"error: {msg}")
+
+
+# ---- repo / ticket lookup --------------------------------------------------
+def looks_like_path(spec: str) -> bool:
+    return spec in (".", "..") or spec.startswith(("/", "~", "./", "../")) or os.sep in spec
+
+
+def resolve_repo(spec: str, db_path=None, registry=None) -> str:
+    if looks_like_path(spec):
+        path = Path(spec).expanduser()
+        if not path.is_dir():
+            raise EngineError(f"not a directory: {spec}")
+        return str(path)
+    try:
+        return repos.resolve(spec, registry, db_path)
+    except EngineError as e:
+        if "no known repo" in str(e):
+            raise EngineError(f"{e}; for a directory write ./{spec}")
+        raise
+
+
+def find_ticket(engine: Engine, spec: str) -> str:
+    """Exact id, else case-insensitive, else a bare number matching one ``PREFIX-N``."""
+    ids = [r[0] for r in engine.db.execute("SELECT id FROM tasks WHERE project_path=?",
+                                           (engine.project,))]
+    if spec in ids:
+        return spec
+    hits = [i for i in ids if i.lower() == spec.lower()]
+    if not hits and spec.isdigit():
+        hits = [i for i in ids if re.search(rf"[-_]0*{int(spec)}$", i)]
+    if len(hits) == 1:
+        return hits[0]
+    if hits:
+        fail(f"{spec!r} matches several tickets: {', '.join(sorted(hits))}")
+    fail(f"no ticket {spec!r} in {Path(engine.project).name}"
+         + (f" (e.g. {sorted(ids)[0]})" if ids else " (it has no tickets yet)"))
+
+
+def open_engine(path: str, db_path=None) -> Engine:
+    try:
+        engine = Engine(path, db_path=db_path)
+        engine.refresh()
+    except EngineError as e:
+        fail(str(e))
+    return engine
+
+
+# ---- formatting ------------------------------------------------------------
+def status_text(s: str) -> str:
+    return paint(STATUS_LABEL.get(s, s), STATUS_COLOR.get(s))
+
+
+def prio_text(p: str, word: bool = True) -> str:
+    return paint(f"{PRIORITY_MARK.get(p, '?')} {p}" if word else PRIORITY_MARK.get(p, "?"),
+                 PRIORITY_COLOR.get(p))
+
+
+def table(headers: list[str], rows: list[list[str]], plain: list[list[str]], width: int) -> str:
+    """Left-aligned table. `rows` may contain ANSI; `plain` are the same cells without it
+    (used for widths). The last column is clipped so lines fit `width`."""
+    cols = len(headers)
+    widths = [max(dw(headers[c]), *(dw(r[c]) for r in plain)) for c in range(cols)]
+    out = []
+    for cells, raw in [(headers, headers)] + list(zip(rows, plain)):
+        parts = []
+        for c in range(cols):
+            text = cells[c]
+            if c == cols - 1:
+                avail = max(8, width - sum(widths[:c]) - 2 * c)
+                if dw(raw[c]) > avail:
+                    text = clip(raw[c], avail)
+            parts.append(text + " " * (widths[c] - dw(raw[c])) if c < cols - 1 else text)
+        out.append("  ".join(parts).rstrip())
+    return "\n".join(out)
+
+
+def ticket_row(t: dict) -> tuple[list[str], list[str]]:
+    plain_status, plain_prio = STATUS_LABEL[t["status"]], f"{PRIORITY_MARK[t['priority']]} {t['priority']}"
+    blocked = ",".join(t["blocked_by"]) or "-"
+    tags = " ".join("#" + x for x in t["tags"]) or "-"
+    plain = [t["id"], plain_status, plain_prio, t["assignee"] or "-", blocked, tags, t["title"]]
+    shown = [t["id"], status_text(t["status"]), prio_text(t["priority"]), plain[3], blocked, tags, t["title"]]
+    return shown, plain
+
+
+def ticket_table(tasks: list[dict]) -> str:
+    headers = ["ID", "STATUS", "PRIORITY", "ASSIGNEE", "BLOCKED BY", "TAGS", "TITLE"]
+    pairs = [ticket_row(t) for t in tasks]
+    return table(headers, [p[0] for p in pairs], [p[1] for p in pairs], term_width())
+
+
+def card(t: dict, width: int) -> list[str]:
+    """A boxed ticket card exactly `width` columns wide (ANSI-safe)."""
+    inner = width - 4
+    extra = (f" →{len(t['blocks'])}" if t["blocks"] else "") + (f" ⛔{len(t['blocked_by'])}" if t["blocked_by"] else "")
+    head = f"{t['id']} {PRIORITY_MARK[t['priority']]}{extra}"
+    who = " ".join(filter(None, ["@" + t["assignee"] if t["assignee"] else "", *("#" + x for x in t["tags"])]))
+    body = [(paint(pad(clip(head, inner), inner), PRIORITY_COLOR.get(t["priority"])), True)]
+    body += [(pad(line, inner), False) for line in wrap(t["title"], inner, 3)]
+    if who:
+        body.append((paint(pad(clip(who, inner), inner), "dim"), True))
+    top, bottom = "┌" + "─" * (width - 2) + "┐", "└" + "─" * (width - 2) + "┘"
+    return [top] + [f"│ {text} │" for text, _ in body] + [bottom]
+
+
+def board_text(tasks: list[dict], width: int) -> str:
+    by = {s: [t for t in tasks if t["status"] == s] for s in BOARD_ORDER}
+    gap = 2
+    colw = (width - gap * (len(BOARD_ORDER) - 1)) // len(BOARD_ORDER)
+    if colw < 24:  # too narrow for side-by-side: one column after another
+        out = []
+        for s in BOARD_ORDER:
+            out.append(paint(f"{STATUS_LABEL[s]} ({len(by[s])})", "bold"))
+            for t in by[s]:
+                out.extend(card(t, min(width, 60)))
+            out.append("")
+        return "\n".join(out).rstrip()
+    cols = []
+    for s in BOARD_ORDER:
+        title = f"{STATUS_LABEL[s]} ({len(by[s])})"
+        lines = [paint(pad(title, colw), STATUS_COLOR[s] or "bold"), "─" * colw]
+        for t in by[s]:
+            lines.extend(card(t, colw))
+        cols.append(lines)
+    height = max(len(c) for c in cols)
+    rows = []
+    for i in range(height):
+        rows.append((" " * gap).join(c[i] if i < len(c) else " " * colw for c in cols).rstrip())
+    return "\n".join(rows)
+
+
+# ---- commands --------------------------------------------------------------
+def add_filters(ap: argparse.ArgumentParser) -> None:
+    ap.add_argument("--status", choices=STATUSES)
+    ap.add_argument("--priority", choices=PRIORITIES)
+    ap.add_argument("--assignee", metavar="NAME")
+    ap.add_argument("-t", "--tag", action="append", default=[], metavar="TAG",
+                    help="only tickets with this tag; repeat for several (all must match)")
+    ap.add_argument("--any", action="store_true", help="with several --tag: match any, not all")
+    ap.add_argument("-q", "--query", metavar="TEXT", help="search titles, descriptions, comments")
+
+
+def public(t: dict) -> dict:
+    """A task for --json: without the index's internal project path."""
+    return {k: v for k, v in t.items() if k != "project_path"}
+
+
+def filtered(engine: Engine, a: argparse.Namespace) -> list[dict]:
+    return engine.list_tasks(status=a.status, assignee=a.assignee, q=a.query, tags=a.tag,
+                             priority=a.priority, match="any" if a.any else "all")
+
+
+def cmd_info(engine: Engine, argv: list[str], p: str) -> None:
+    ap = argparse.ArgumentParser(prog=f"{p} REPO", description="Project info: branch, sync state "
+                                 "and ticket counts.")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args(argv)
+    tasks, sync = engine.list_tasks(), engine.sync_status()
+    count = lambda key, val: sum(1 for t in tasks if t[key] == val)
+    openn = [t for t in tasks if t["status"] != "done"]
+    people: dict[str, int] = {}
+    for t in openn:
+        if t["assignee"]:
+            people[t["assignee"]] = people.get(t["assignee"], 0) + 1
+    info = {"name": Path(engine.project).name, "path": engine.project, **sync,
+            "tickets": len(tasks), "by_status": {s: count("status", s) for s in STATUSES},
+            "open_by_priority": {q: sum(1 for t in openn if t["priority"] == q) for q in PRIORITIES},
+            "open_by_assignee": people, "tags": {x["tag"]: x["count"] for x in engine.all_tags()}}
+    if a.json:
+        print(json.dumps(info, ensure_ascii=False, indent=2))
+        return
+    branch = info["branch"] + (f" → {info['upstream']}" if info["upstream"] else "  (no upstream)")
+    if info["ahead"] or info["behind"]:
+        branch += f"  (ahead {info['ahead']}, behind {info['behind']})"
+    join = lambda d: "  ·  ".join(f"{k} {v}" for k, v in d.items() if v) or "-"
+    print(paint(info["name"], "bold") + "  " + info["path"])
+    print(f"branch:     {branch}")
+    print(f"uncommitted .todo changes: {info['changes']}")
+    print(f"tickets:    {info['tickets']}  ·  " + "  ·  ".join(
+        f"{STATUS_LABEL[s].lower()} {n}" for s, n in info["by_status"].items()))
+    print(f"open by priority:  {join(info['open_by_priority'])}")
+    print(f"open by assignee:  {join(people)}")
+    print(f"tags:       {join(info['tags'])}")
+
+
+def cmd_ls(engine: Engine, argv: list[str], p: str) -> None:
+    ap = argparse.ArgumentParser(
+        prog=f"{p} REPO ls", formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="List the tickets of a repo as a table (high priority first).",
+        epilog="examples:\n"
+               f"  • {p} . ls --status todo --priority high\n"
+               f"  • {p} my-repo ls -t backend -t auth        tickets with both tags\n"
+               f"  • {p} 2 ls -q login --json")
+    add_filters(ap)
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--ids", action="store_true", help=argparse.SUPPRESS)  # tab completion
+    a = ap.parse_args(argv)
+    tasks = filtered(engine, a)
+    if a.ids:
+        print("\n".join(t["id"] for t in tasks))
+    elif a.json:
+        print(json.dumps([public(t) for t in tasks], ensure_ascii=False, indent=2))
+    elif not tasks:
+        print("no tickets")
+    else:
+        print(ticket_table(tasks))
+        print(paint(f"{len(tasks)} ticket{'s' if len(tasks) != 1 else ''}", "dim"))
+
+
+def cmd_board(engine: Engine, argv: list[str], p: str) -> None:
+    ap = argparse.ArgumentParser(
+        prog=f"{p} REPO board", formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="The kanban board in the terminal: To do / In progress / Done / Blocked.\n"
+                    "Fits the terminal width; on a narrow terminal the columns stack.",
+        epilog=f"cards show: ID, priority (▲ high ● medium ▼ low), →N tickets it blocks,\n"
+               f"⛔N tickets blocking it, @assignee and #tags.")
+    add_filters(ap)
+    a = ap.parse_args(argv)
+    print(board_text(filtered(engine, a), term_width()))
+
+
+def render_ticket(engine: Engine, t: dict) -> str:
+    by_id = {x["id"]: x for x in engine.list_tasks()}
+    ref = lambda i: f"{i}  {by_id[i]['title']}  [{STATUS_LABEL[by_id[i]['status']]}]" if i in by_id else f"{i}  (missing)"
+    out = [f"{paint(t['id'], 'bold')}  {t['title']}",
+           f"status: {status_text(t['status'])}   priority: {prio_text(t['priority'])}"
+           f"   assignee: {t['assignee'] or '-'}",
+           f"tags: {' '.join('#' + x for x in t['tags']) or '-'}"]
+    if t["blocked_by"]:
+        out.append("blocked by:\n" + "\n".join("  " + ref(i) for i in t["blocked_by"]))
+    if t["blocks"]:
+        out.append("blocks:\n" + "\n".join("  " + ref(i) for i in t["blocks"]))
+    out.append(paint("file: " + engine.task_path(t["id"]).relative_to(engine.root).as_posix(), "dim"))
+    if t["description"].strip():
+        out += ["", t["description"].rstrip()]
+    comments = engine.get_comments(t["id"])
+    out += ["", paint(f"Comments ({len(comments)})", "bold")]
+    for c in comments:
+        edited = " (edited)" if c["edited_at"] else ""
+        out.append(paint(f"  {c['author']} · {local_time(c['created_at'])}{edited}", "dim"))
+        out += ["    " + line for line in c["body"].splitlines()] + [""]
+    return "\n".join(out).rstrip()
+
+
+def editor_command() -> list[str]:
+    cmd = shlex.split(os.environ.get("VISUAL") or os.environ.get("EDITOR") or "")
+    if not cmd:
+        found = next((e for e in ("nano", "vim", "vi") if shutil.which(e)), None)
+        if not found:
+            fail("no editor found; set $EDITOR (e.g. export EDITOR=nano)")
+        cmd = [found]
+    return cmd
+
+
+def run_editor(path: Path) -> None:
+    try:
+        rc = subprocess.run([*editor_command(), str(path)]).returncode
+    except FileNotFoundError:
+        fail(f"editor not found: {editor_command()[0]}")
+    if rc != 0:
+        fail(f"the editor exited with status {rc}")
+
+
+def cmd_edit(engine: Engine, tid: str, p: str) -> None:
+    path = engine.task_path(tid)
+    before = path.read_bytes()
+    run_editor(path)
+    if path.read_bytes() == before:
+        print(f"{tid}: no changes")
+        return
+    try:
+        task = clean_task(load_file(path), tid)
+        if load_file(path).get("id") not in (None, tid):
+            raise ValidationError(f"the id must stay {tid}")
+        engine.refresh()
+        engine._check_graph(task)
+    except Exception as e:  # JSON5 syntax errors come from the parser, not EngineError
+        fail(f"{tid} was saved but is not valid: {e}\n"
+             f"fix it with `{p} REPO {tid} edit`, or undo with: git checkout -- {path.relative_to(engine.root)}")
+    print(f"{tid}: updated (not committed; use Save work in the app or git)")
+
+
+COMMENT_HELP = "# Write your comment above. Lines starting with '#' are ignored.\n# An empty comment aborts.\n"
+
+
+def cmd_comment(engine: Engine, tid: str, message: str | None) -> None:
+    if message is None and not sys.stdin.isatty():
+        message = sys.stdin.read()
+    if message is None:
+        with tempfile.NamedTemporaryFile("w+", suffix=".md", delete=False, encoding="utf-8") as f:
+            f.write("\n\n" + COMMENT_HELP)
+        tmp = Path(f.name)
+        try:
+            run_editor(tmp)
+            message = "\n".join(line for line in tmp.read_text(encoding="utf-8").splitlines()
+                                if not line.startswith("#"))
+        finally:
+            tmp.unlink(missing_ok=True)
+    try:
+        c, _ = engine.add_comment(tid, message)
+    except ValidationError:
+        fail("empty comment, nothing added")
+    print(f"commented on {tid} as {c['author']}  ({c['id']})")
+
+
+PRIORITY_ALIASES = {"h": "high", "m": "medium", "med": "medium", "l": "low"}
+
+
+def cmd_priority(engine: Engine, tid: str, value: str, ap: argparse.ArgumentParser) -> None:
+    value = PRIORITY_ALIASES.get(value.lower(), value.lower())
+    if value not in PRIORITIES:
+        ap.error(f"invalid priority {value!r} (choose high, medium or low)")
+    old = engine.get_task(tid)["priority"]
+    if old == value:
+        print(f"{tid}: priority is already {value}")
+        return
+    engine.save_task({"id": tid, "priority": value})
+    print(f"{tid}: priority {old} → {value}")
+
+
+DEP_WORDS = ("blocked", "block-by")
+
+
+def cmd_deps(engine: Engine, tid: str, kind: str, remove: bool, specs: list[str]) -> None:
+    """kind 'blocked': TID blocks each spec; kind 'block-by': TID is blocked by each spec."""
+    for spec in specs:
+        current = engine.get_task(tid)["blocked_by"]
+        other = spec if remove and kind == "block-by" and spec in current else find_ticket(engine, spec)
+        task, blocker = (other, tid) if kind == "blocked" else (tid, other)
+        try:
+            (engine.remove_dependency if remove else engine.add_dependency)(task, blocker)
+        except NotFound as e:
+            fail(f"no ticket {e}")
+        except ValidationError as e:
+            fail(f"cannot make {task} blocked by {blocker}: {e}"
+                 + (" (a dependency cycle)" if "->" in str(e) else ""))
+        verb = "no longer" if remove else "now"
+        print(f"{task} is {verb} blocked by {blocker}")
+
+
+def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
+    ap = argparse.ArgumentParser(
+        prog=f"{p} REPO ID", formatter_class=argparse.RawDescriptionHelpFormatter,
+        usage=f"{p} REPO ID [edit | comment | priority VALUE | blocked IDS | block-by IDS | "
+              "remove blocked IDS | remove block-by IDS] [flags]",
+        description="Show a ticket, edit it, comment on it, set its priority, or change its dependencies.",
+        epilog="examples:\n"
+               f"  • {p} . TKT-101                 show the ticket (a bare 101 works too)\n"
+               f"  • {p} . TKT-101 edit            open the ticket file in $VISUAL / $EDITOR\n"
+               f"  • {p} . TKT-101 comment         write a comment in $EDITOR\n"
+               f"  • {p} . TKT-101 -c -m 'done'    add a comment from the command line\n"
+               f"  • echo 'looks good' | {p} . TKT-101 comment\n"
+               f"  • {p} . TKT-101 priority high   set the priority (high | medium | low; -p h also works)\n"
+               f"  • {p} . TKT-101 blocked 104     TKT-101 blocks TKT-104\n"
+               f"  • {p} . TKT-104 block-by 101    TKT-104 is blocked by TKT-101 (same link)\n"
+               f"  • {p} . TKT-101 remove blocked 104       remove that link\n"
+               f"  • {p} . TKT-104 -rbb 101                 ...from the other side\n"
+               "\npriority flag: -p/--priority VALUE (h, m, l and med are accepted too).\n"
+               "dependency flags: -b/--blocked, -bb/--block-by, -rb/--remove-blocked,\n"
+               "-rbb/--remove-block-by (each takes one or more ticket ids). Cycles are refused.\n"
+               "edit and the dependency commands change files under .todo/ (and comment adds one);\n"
+               "none of them commit: use Save work in the app or git.")
+    ap.add_argument("words", nargs="*", metavar="ACTION",
+                    help="edit | comment | blocked IDS | block-by IDS | remove blocked|block-by IDS")
+    ap.add_argument("-e", "--edit", action="store_true", help="same as the edit action")
+    ap.add_argument("-c", "--comment", action="store_true", help="same as the comment action")
+    ap.add_argument("-m", "--message", help="comment text (with comment)")
+    ap.add_argument("-p", "--priority", metavar="VALUE", help="set the priority: high | medium | low")
+    for flag, dest in (("-b", "blocked"), ("-bb", "block_by"),
+                       ("-rb", "remove_blocked"), ("-rbb", "remove_block_by")):
+        ap.add_argument(flag, "--" + dest.replace("_", "-"), dest=dest, nargs="+", metavar="ID")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args(argv)
+
+    ops: list[tuple] = []  # (name, kind, remove, ids)
+    w = a.words
+    if w:
+        head, ids = w[0], w[1:]
+        if head == "remove":
+            if not ids or ids[0] not in DEP_WORDS:
+                ap.error("remove needs blocked or block-by, e.g. remove block-by 101")
+            ops.append(("dep", ids[0], True, ids[1:]))
+        elif head in DEP_WORDS:
+            ops.append(("dep", head, False, ids))
+        elif head == "priority":
+            if len(ids) != 1:
+                ap.error("priority needs one value: high, medium or low")
+            ops.append(("priority", ids[0]))
+        elif head in ("edit", "comment") and not ids:
+            ops.append((head,))
+        else:
+            ap.error(f"unknown action {' '.join(w)!r}")
+    ops += [(n,) for n, on in (("edit", a.edit), ("comment", a.comment)) if on]
+    if a.priority is not None:
+        ops.append(("priority", a.priority))
+    ops += [("dep", k, rm, ids) for k, rm, ids in (
+        ("blocked", False, a.blocked), ("block-by", False, a.block_by),
+        ("blocked", True, a.remove_blocked), ("block-by", True, a.remove_block_by)) if ids]
+    if len(ops) > 1 and {o[0] for o in ops} != {"dep"}:
+        ap.error("choose one of edit, comment, priority or dependency changes")
+    if any(o[0] == "dep" and not o[3] for o in ops):
+        ap.error("give at least one ticket id")
+    if a.message is not None and not any(o[0] == "comment" for o in ops):
+        ap.error("-m/--message needs comment (-c)")
+    tid = find_ticket(engine, spec)
+    if not ops:
+        t = engine.get_task(tid)
+        if a.json:
+            print(json.dumps({**public(t), "comments": engine.get_comments(tid)}, ensure_ascii=False, indent=2))
+        else:
+            print(render_ticket(engine, t))
+    elif ops[0][0] == "edit":
+        cmd_edit(engine, tid, p)
+    elif ops[0][0] == "comment":
+        cmd_comment(engine, tid, a.message)
+    elif ops[0][0] == "priority":
+        cmd_priority(engine, tid, ops[0][1], ap)
+    else:
+        for _, kind, remove, ids in ops:
+            cmd_deps(engine, tid, kind, remove, ids)
+
+
+def run(argv: list[str], p: str, db_path=None, registry=None) -> list[str] | None:
+    """Handle ``REPO [ACTION ...]``. For ``serve`` return the argv to serve with (the caller
+    starts the server); otherwise do the work and return None."""
+    spec, rest = argv[0], argv[1:]
+    if spec in ("-h", "--help"):
+        return None
+    try:
+        path = resolve_repo(spec, db_path, registry)
+    except EngineError as e:
+        fail(str(e))
+    action = rest[0] if rest else None
+    if action == "serve":
+        return ["--target", path, *rest[1:]]
+    if action in ("-h", "--help"):
+        print(f"usage: {p} REPO [ls | board | serve | ID [edit | comment]]\n"
+              f"see {p} -h for the commands, or {p} REPO ls -h / board -h / ID -h")
+        return None
+    engine = open_engine(path, db_path)
+    if action is None or action.startswith("-"):
+        cmd_info(engine, rest, p)
+    elif action == "ls":
+        cmd_ls(engine, rest[1:], p)
+    elif action == "board":
+        cmd_board(engine, rest[1:], p)
+    else:
+        cmd_ticket(engine, action, rest[1:], p)
+    return None
