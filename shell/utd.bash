@@ -1,7 +1,7 @@
 # utd: shell shortcut for ultra-todo. Source this file from ~/.bashrc:
 #   source /path/to/ultra-todo/shell/utd.bash
 #
-#   utd REPO [ls | board | next | new | pull | save | serve | ID [action]]
+#   utd REPO [ls | board | next | new | pull | save | migrate | serve | ID [action]]
 #   utd ls | utd open NAME|N [flags] | utd forget NAME|N,...
 # REPO is . (current repo), a path, or a known repo's name or `utd ls` number. `utd -h` lists everything.
 
@@ -47,12 +47,13 @@ _utd() {
     local ids
     ids() { utd "$first" ls --ids 2>/dev/null; }
     if [ "$COMP_CWORD" -eq 2 ]; then
-        COMPREPLY=($(compgen -W "ls board next new pull save serve $(ids)" -- "$cur")); return
+        COMPREPLY=($(compgen -W "ls board next new pull save migrate serve $(ids)" -- "$cur")); return
     fi
     case "$second" in
         ls|board) COMPREPLY=($(compgen -W "$filter_flags --json" -- "$cur")) ;;
         next) COMPREPLY=($(compgen -W "$filter_flags -n --json" -- "$cur")) ;;
-        new) COMPREPLY=($(compgen -W "-p --priority -a --assignee -t --tag -d --description --status --id -h" -- "$cur")) ;;
+        new) COMPREPLY=($(compgen -W "-p --priority -a --assignee -t --tag -d --description --status --id --attach -h" -- "$cur")) ;;
+        migrate) COMPREPLY=($(compgen -W "-h" -- "$cur")) ;;
         pull) COMPREPLY=($(compgen -W "--rebase -h" -- "$cur")) ;;
         save) COMPREPLY=($(compgen -W "-m --message --set-upstream -h" -- "$cur")) ;;
         serve) COMPREPLY=($(compgen -W "$serve_flags" -- "$cur")) ;;
@@ -63,11 +64,12 @@ _utd() {
                 blocked|block-by|-b|-bb|-rb|-rbb|--blocked|--block-by|--remove-blocked|--remove-block-by)
                     COMPREPLY=($(compgen -W "$(ids)" -- "$cur")); return ;;
                 remove) COMPREPLY=($(compgen -W "blocked block-by" -- "$cur")); return ;;
+                attach|--attach) compopt -o filenames 2>/dev/null; COMPREPLY=($(compgen -f -- "$cur")); return ;;
             esac
             if [ "$COMP_CWORD" -eq 3 ] && [[ "$cur" != -* ]]; then
-                COMPREPLY=($(compgen -W "edit comment status start done reopen priority blocked block-by remove" -- "$cur"))
+                COMPREPLY=($(compgen -W "edit comment status start done reopen priority attach detach blocked block-by remove" -- "$cur"))
             else
-                COMPREPLY=($(compgen -W "-e -c -m -s -p -b -bb -rb -rbb --json -h" -- "$cur"))
+                COMPREPLY=($(compgen -W "-e -c -m -s -p -a -d -b -bb -rb -rbb --json -h" -- "$cur"))
             fi ;;
     esac
 }

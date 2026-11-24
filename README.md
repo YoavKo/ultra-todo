@@ -17,6 +17,7 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 - **Priority** – high / medium / low (default medium): coloured badge on cards, priority filter, high-priority tasks listed first
 - **Dependencies** – each task page shows what blocks it and what it blocks, with one-click × to remove a link and a picker to add one (cycles are rejected)
 - **Tags** on tasks, with filter chips (AND / OR, shareable via URL)
+- **Attachments on the ticket** – attach images and files to a ticket's description (task form: choose, paste or drop; CLI: `utd . TKT-101 attach FILE…`), stored in the ticket's own directory
 - **Comments** per task: newest first, author and time stamped by the server, editable, with image/file attachments stored next to the task
 - **Update** button: `git pull --ff-only`, then the index is refreshed from the diff (rebase offered if the branch diverged; aborted cleanly on conflict)
 - **Save work** button: commits only `.todo/` changes (editable message) and pushes; never force-pushes, never stages files outside `.todo/`
@@ -121,6 +122,8 @@ utd . TKT-101 start | done | reopen      # or: status doing|done|todo|blocked, o
 utd . TKT-101 priority high              # or -p high (h, m, l work too)
 utd . TKT-101 edit                       # or -e: open the ticket file in $VISUAL / $EDITOR; validated on exit
 utd . TKT-101 comment -m "text"          # or -c; without -m: $EDITOR, or stdin (echo hi | utd . TKT-101 -c)
+utd . TKT-101 attach shot.png log.txt    # or -a: attach files to the description; detach NAME (-d) removes one
+utd . new "Crash" --attach trace.txt     # a new ticket with files attached
 utd . TKT-101 blocked 104 105            # or -b: TKT-101 blocks 104 and 105
 utd . TKT-104 block-by 101               # or -bb: TKT-104 is blocked by 101 (the same link, seen from the other side)
 utd . TKT-101 remove blocked 104         # or -rb;  remove block-by 101 / -rbb
@@ -143,6 +146,7 @@ Details:
 - Dependency changes refuse cycles and self-links (exit code 1, nothing written). A `remove block-by` also works on ids that no longer exist.
 - `save` commits whatever changed under `.todo/` and then pushes; if the branch has no upstream it has already committed and tells you to rerun with `--set-upstream`. `pull` stops cleanly on conflicts, like the app.
 - Colours follow the terminal: off when piped, off with `NO_COLOR`, forced with `CLICOLOR_FORCE=1`.
+- `utd . migrate` moves tickets from the old flat `ID.json5` layout to `ID/main.json5` (see [File formats](#file-formats)); nothing is committed until `save`.
 - Per-command help: `utd . ls -h`, `board -h`, `new -h`, `next -h`, `pull -h`, `save -h`, `utd . TKT-1 -h`.
 - Breaking change: `utd` alone and `utd PATH` used to serve a repo; that is now `utd . serve` / `utd PATH serve` (`utd open NAME` and `ultra-todo --target PATH` are unchanged).
 
@@ -183,10 +187,12 @@ directory with one of those names write `utd ./ls`.
 
 ```
 <repo>/.todo/tasks/
-├── TKT-101.json5
-└── TKT-101/
-    ├── comments/20261018T100000123Z-ab12cd.json5
-    └── attachments/<comment-id>/screenshot.png
+└── TKT-101/                                  # one directory per ticket
+    ├── main.json5                            # the ticket itself
+    ├── comments/20261018-100000-ab12cd.json5 # one file per comment: UTC date-time + random id
+    └── attachments/
+        ├── description/error.png             # attached to the ticket's description
+        └── 20261018-100000-ab12cd/screenshot.png   # attached to that comment
 ```
 
 Task:
@@ -201,6 +207,7 @@ Task:
   description: "…",
   tags: ["backend", "דחוף"],
   blocked_by: ["TKT-099"],
+  attachments: [{ name: "error.png", file: "attachments/description/error.png", mime: "image/png", size: 4821 }],  // optional
 }
 ```
 
@@ -208,12 +215,12 @@ Comment (one file per comment, so concurrent comments never conflict):
 
 ```json5
 {
-  id: "20261018T100000123Z-ab12cd",   // = file name
+  id: "20261018-100000-ab12cd",       // = file name: UTC YYYYMMDD-HHMMSS + random hex
   author: "Yoav <yoav@example.com>",     // from git config, set by the server
-  created_at: "2026-10-18T10:00:00Z",
+  created_at: "2026-10-18T10:00:00.123Z",
   edited_at: null,
   body: "…",
-  attachments: [{ name: "screenshot.png", file: "attachments/20261018T100000123Z-ab12cd/screenshot.png", mime: "image/png", size: 48213 }],
+  attachments: [{ name: "screenshot.png", file: "attachments/20261018-100000-ab12cd/screenshot.png", mime: "image/png", size: 48213 }],
 }
 ```
 
@@ -221,6 +228,7 @@ Notes:
 - Hand-written JSON5 (comments, unquoted keys, trailing commas) is read fine, but when the app saves a task it rewrites the file as deterministic JSON (valid JSON5), so `//` comments in that file are lost. Extra fields you add are kept.
 - Attachments are user files committed to the repo; consider Git LFS for large ones. PNG/JPEG/GIF/WebP show inline; everything else (including SVG) is served as a download.
 - Only the comment's author (by git identity) can edit or delete it.
+- **Older layout**: tickets used to be a flat `.todo/tasks/TKT-101.json5` and comment ids looked like `20261018T100000123Z-ab12cd`. Both are still read (and flat tickets are edited in place), so nothing breaks; `utd REPO migrate` moves the flat files into `TKT-101/main.json5` with `git mv`. The app and `utd REPO` warn while flat files remain. If both a flat and a nested file exist for one ticket the nested one wins.
 - Uncommitted edits under `.todo/` are picked up too (the cache key is `HEAD` + the dirty-file list).
 
 ## Translations
