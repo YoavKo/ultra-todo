@@ -67,7 +67,7 @@ def test_board(proj, capsys, monkeypatch):
     wide = out(capsys).splitlines()
     assert wide[0].split("  ")[0] == "To do (1)" and "In progress (1)" in wide[0]
     assert any("TKT-101 ▲ →1" in l for l in wide)
-    assert any("TKT-102 ● ⛔1" in l for l in wide)
+    assert any("TKT-102 ● ✖1" in l for l in wide)
     monkeypatch.setenv("COLUMNS", "50")
     proj("board")
     narrow = out(capsys)

@@ -188,7 +188,7 @@ def ticket_table(tasks: list[dict]) -> str:
 def card(t: dict, width: int) -> list[str]:
     """A boxed ticket card exactly `width` columns wide (ANSI-safe)."""
     inner = width - 4
-    extra = (f" →{len(t['blocks'])}" if t["blocks"] else "") + (f" ⛔{len(t['blocked_by'])}" if t["blocked_by"] else "")
+    extra = (f" →{len(t['blocks'])}" if t["blocks"] else "") + (f" ✖{len(t['blocked_by'])}" if t["blocked_by"] else "")
     head = f"{t['id']} {PRIORITY_MARK[t['priority']]}{extra}"
     who = " ".join(filter(None, ["@" + t["assignee"] if t["assignee"] else "", *("#" + x for x in t["tags"])]))
     body = [(paint(pad(clip(head, inner), inner), PRIORITY_COLOR.get(t["priority"])), True)]
@@ -324,7 +324,7 @@ def cmd_board(engine: Engine, argv: list[str], p: str) -> None:
         description="The kanban board in the terminal: To do / In progress / Done / Blocked.\n"
                     "Fits the terminal width; on a narrow terminal the columns stack.",
         epilog=f"cards show: ID, priority (▲ high ● medium ▼ low), →N tickets it blocks,\n"
-               f"⛔N tickets blocking it, @assignee and #tags.")
+               f"✖N tickets blocking it, @assignee and #tags.")
     add_filters(ap)
     a = ap.parse_args(argv)
     print(board_text(filtered(engine, a), term_width()))

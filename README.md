@@ -21,6 +21,7 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 - **Update** button: `git pull --ff-only`, then the index is refreshed from the diff (rebase offered if the branch diverged; aborted cleanly on conflict)
 - **Save work** button: commits only `.todo/` changes (editable message) and pushes; never force-pushes, never stages files outside `.todo/`
 - **Several repos** – serve many at once (free ports picked automatically); `ls` / `open` / `forget` manage the list of known repos, with a `utd` bash shortcut and tab completion
+- **Terminal-first too** – `utd . ls`, `utd . board`, `utd . TKT-101 done`, `utd . new "…"`, `utd . save`: browse and change tickets, comment, set dependencies and sync without opening the browser
 - Hebrew + English: translated UI, RTL layout, `dir="auto"` for mixed-language content; language set with `--lang` and/or the in-app toggle
 
 ## Screenshots
@@ -37,9 +38,13 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 
 ![New task page](docs/screenshots/task-new-dark.png)
 
-**Command line** – listing known repos and the built-in help.
+**Command line** – the same tickets in the terminal ([details below](#terminal-tickets-from-the-command-line)).
 
-![CLI usage](docs/screenshots/cli.png)
+![Kanban board in the terminal](docs/screenshots/cli-board.png)
+
+![Ticket list in the terminal](docs/screenshots/cli-tickets.png)
+
+![Known repos and the command list](docs/screenshots/cli.png)
 
 ## Install and run (uv)
 
@@ -94,85 +99,87 @@ Details:
 - If two repos share a name, `open` lists both paths; use the number or the path.
 - `forget` resolves all names/numbers against one listing first (so `3,5` means what `ls` showed), removes nothing if any is unknown, and also drops the repo's cached index. The repo's files are never touched; serving it again adds it back.
 
+## Terminal: tickets from the command line
+
+Everything below works as `utd …` (the shell shortcut, next section) or `ultra-todo …`.
+`REPO` is `.` (the repo you are in), a path, or the name or `ls` number of a known repo.
+
+```bash
+utd .                         # project info: branch, sync state, ticket counts
+utd . ls                      # tickets as a table; filters: --status --priority --assignee -t TAG --any -q TEXT --open --mine
+utd . board                   # the kanban board (columns stack on a narrow terminal)
+utd . next                    # what to work on: open, unblocked, highest priority first
+utd . TKT-101                 # show a ticket (case-insensitive; a bare 101 works too)
+utd my-repo ls --status todo  # by known repo name (or number)
+utd . serve --port 9000       # serve the web UI (what `utd` alone used to do)
+```
+
+![Ticket list and project info](docs/screenshots/cli-tickets.png)
+
+Change tickets (every change is a file edit under `.todo/`, nothing is committed until `save`):
+
+```bash
+utd . new "Fix login" -p high -a alice -t backend -t auth -d "details"   # prints the new id; no title opens $EDITOR
+utd . TKT-101 start | done | reopen      # or: status doing|done|todo|blocked, or -s doing
+utd . TKT-101 priority high              # or -p high (h, m, l work too)
+utd . TKT-101 edit                       # or -e: open the ticket file in $VISUAL / $EDITOR; validated on exit
+utd . TKT-101 comment -m "text"          # or -c; without -m: $EDITOR, or stdin (echo hi | utd . TKT-101 -c)
+utd . TKT-101 blocked 104 105            # or -b: TKT-101 blocks 104 and 105
+utd . TKT-104 block-by 101               # or -bb: TKT-104 is blocked by 101 (the same link, seen from the other side)
+utd . TKT-101 remove blocked 104         # or -rb;  remove block-by 101 / -rbb
+```
+
+![Changing tickets](docs/screenshots/cli-change.png)
+
+Sync, the same as the app's buttons:
+
+```bash
+utd . pull [--rebase]                    # Update: git pull --ff-only, then refresh the index
+utd . save [-m "message"] [--set-upstream]   # Save work: commit only .todo/, then push; never force-pushes
+```
+
+![save and pull](docs/screenshots/cli-sync.png)
+
+![A ticket](docs/screenshots/cli-ticket.png)
+
+Details:
+- `ls`, `board`, `next` and the ticket view take `--json` (the info command too) for scripts; `ls --ids` prints just the ids.
+- `--mine` matches the assignee against `git config user.name` (or the part of `user.email` before the `@`).
+- Dependency changes refuse cycles and self-links (exit code 1, nothing written). A `remove block-by` also works on ids that no longer exist.
+- `save` commits whatever changed under `.todo/` and then pushes; if the branch has no upstream it has already committed and tells you to rerun with `--set-upstream`. `pull` stops cleanly on conflicts, like the app.
+- Colours follow the terminal: off when piped, off with `NO_COLOR`, forced with `CLICOLOR_FORCE=1`.
+- Per-command help: `utd . ls -h`, `board -h`, `new -h`, `next -h`, `pull -h`, `save -h`, `utd . TKT-1 -h`.
+- Breaking change: `utd` alone and `utd PATH` used to serve a repo; that is now `utd . serve` / `utd PATH serve` (`utd open NAME` and `ultra-todo --target PATH` are unchanged).
+
 ## Shell shortcut: `utd`
 
-`utd` is a bash function that runs ultra-todo from any directory. The path defaults to the
-current directory, extra flags pass through, and `-h` / error messages speak in `utd` terms.
+`shell/utd.bash` defines `utd` (runs ultra-todo from any directory) and its tab completion. Add one line
+to `~/.bashrc` and `source ~/.bashrc`:
 
 ```bash
-utd                          # serve the current directory
-utd --lang he                # flags only: still the current directory
-utd ~/work/some-repo --port 9000
+source /path/to/ultra-todo/shell/utd.bash
+```
+
+(If you pasted the old `utd` function there, replace it with this line.) It needs `uv` on the `PATH`.
+
+```bash
+utd -h                       # every command, with flags
 utd ls                       # known repos
-utd open some-repo           # by name; Tab completes names
-utd open 1                   # by ls number
+utd open some-repo           # serve a known repo by name; Tab completes names
 utd forget 3,5               # by numbers or names; Tab completes names, also after a comma
-utd -h                       # flags and commands; utd ls -h / open -h / forget -h for each command
+utd . serve --lang he        # serve the current repo
 ```
 
-Tab completion: commands and directories first, repo names after `open` / `forget`, then flags
-(`--lang` completes `en` / `he`). `ls`, `open` and `forget` are commands, so to serve a directory
-with one of those names write `utd ./ls`.
-
-Add this to `~/.bashrc` (set `proj` to your checkout), then `source ~/.bashrc`:
-
-<details>
-<summary><code>utd</code> function and completion</summary>
-
-```bash
-# ultra-todo: utd [path] [flags] | utd ls | utd open NAME|N [flags] | utd forget NAME|N,...
-# (path defaults to .)
-utd() {
-    local proj="$HOME/path/to/ultra-todo"
-    case "$1" in
-        ls|open|forget) ULTRA_TODO_PROG=utd uv run --project "$proj" ultra-todo "$@"; return ;;
-    esac
-    local target=.
-    if [ $# -gt 0 ] && [[ "$1" != -* ]]; then target="$1"; shift; fi
-    target="$(realpath -- "$target")" || return 1
-    ULTRA_TODO_PROG=utd uv run --project "$proj" ultra-todo --target "$target" "$@"
-}
-
-# tab completion for utd: a command or directory first, repo names after open/forget, then flags
-_utd() {
-    local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
-    case "$prev" in
-        --lang) COMPREPLY=($(compgen -W "en he" -- "$cur")); return ;;
-        --db) compopt -o filenames; COMPREPLY=($(compgen -f -- "$cur")); return ;;
-        --host|--port|--author|--max-attachment-mb|--threads) return ;;
-    esac
-    case "${COMP_WORDS[1]}" in
-        ls|forget|open) if [[ "$cur" == -* ]] && [ "$COMP_CWORD" -eq 2 ]; then
-                COMPREPLY=($(compgen -W "-h --help" -- "$cur")); return; fi ;;
-    esac
-    [ "${COMP_WORDS[1]}" = ls ] && return
-    if [ "${COMP_WORDS[1]}" = forget ] && [ "$COMP_CWORD" -ge 2 ]; then
-        local IFS=$'\n' pre="" name
-        [[ "$cur" == *,* ]] && pre="${cur%,*}," && cur="${cur##*,}"
-        COMPREPLY=($(for name in $(utd ls --names --all 2>/dev/null); do
-            [[ "$name" == "$cur"* ]] && echo "$pre$name"; done))
-        return
-    fi
-    if [ "${COMP_WORDS[1]}" = open ] && [ "$COMP_CWORD" -eq 2 ]; then
-        local IFS=$'\n'
-        COMPREPLY=($(compgen -W "$(utd ls --names 2>/dev/null)" -- "$cur"))
-    elif [[ "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "--lang --host --port --auto-commit --author --max-attachment-mb --db --threads --debug -h --help" -- "$cur"))
-    elif [ "$COMP_CWORD" -eq 1 ]; then
-        compopt -o filenames
-        COMPREPLY=($(compgen -W "ls open forget" -- "$cur") $(compgen -d -- "$cur"))
-    fi
-}
-complete -F _utd utd
-```
-
-</details>
+Tab completion covers the commands, repo names and directories, then per repo: the actions, ticket ids
+(`utd . TK<Tab>`), values after `status` / `priority` / `-p` / `-s`, ids after `blocked` / `block-by` /
+`remove`, and the flags of each command. `ls`, `open`, `forget` are commands, so to use a repo or
+directory with one of those names write `utd ./ls`.
 
 ### CLI flags
 
 | Flag | Meaning |
 |---|---|
-| `--target PATH` | Git repo to manage (must contain or get `.todo/tasks/`); `utd` sets it for you |
+| `--target PATH` | Git repo to manage (must contain or get `.todo/tasks/`); `utd REPO serve` sets it for you |
 | `--lang he\|en` | Default UI language (users can override in the UI) |
 | `--host ADDR` | Address to bind (default `127.0.0.1`, local only) |
 | `--port N` | Port (default: first free port from 8080 up); a busy explicit port is an error |
