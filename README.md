@@ -55,6 +55,8 @@ Without uv: `pip install -r requirements.txt && python src/app.py --target ...`.
 Several repos can be served at once: without `--port`, each instance takes the first free port
 from 8080 up (8080, 8081, …) and logs which repo it serves where; the browser tab shows the repo name.
 
+![Serving two repos](docs/screenshots/cli-serve.png)
+
 ## Known repos: `ls`, `open`, `forget`
 
 Every repo you serve is remembered, so you can list it and open it again by name or number.
@@ -66,6 +68,14 @@ ultra-todo open my-repo             # serve a known repo by name (case-insensiti
 ultra-todo open 1 --lang he         # ...or by its ls number; serve flags still work
 ultra-todo forget 3,5               # remove repos from the list (or: forget old-repo 4)
 ```
+
+![ls and open](docs/screenshots/cli-open.png)
+
+![forget](docs/screenshots/cli-forget.png)
+
+Per-command help:
+
+![open -h and forget -h](docs/screenshots/cli-help.png)
 
 `ls` output:
 
