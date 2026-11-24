@@ -371,18 +371,23 @@ def render_ticket(engine: Engine, t: dict) -> str:
     out.append(paint("file: " + engine.task_path(t["id"]).relative_to(engine.root).as_posix(), "dim"))
     if t["description"].strip():
         out += ["", t["description"].rstrip()]
+    have = all_attachments(engine, t["id"])
+    number = {(o, a["name"]): n for n, (o, _, a) in enumerate(have, 1)}
     if t["attachments"]:
         out += ["", paint(f"Attachments ({len(t['attachments'])})", "bold")]
         for a in t["attachments"]:
             where = engine.task_dir(t["id"]) / a["file"]
-            out.append(f"  {a['name']}  ({a['size'] / 1024:.1f} KB)  "
+            out.append(f"  {number[(DESCRIPTION, a['name'])]}  {a['name']}  ({a['size'] / 1024:.1f} KB)  "
                        + paint(where.relative_to(engine.root).as_posix(), "dim"))
     comments = engine.get_comments(t["id"])
     out += ["", paint(f"Comments ({len(comments)})", "bold")]
     for c in comments:
         edited = " (edited)" if c["edited_at"] else ""
         out.append(paint(f"  {c['author']} · {local_time(c['created_at'])}{edited}", "dim"))
-        out += ["    " + line for line in c["body"].splitlines()] + [""]
+        out += ["    " + line for line in c["body"].splitlines()]
+        out += [paint(f"    attachment {number[(c['id'], a['name'])]}: {a['name']}"
+                      f"  ({a['size'] / 1024:.1f} KB)", "dim") for a in c["attachments"]]
+        out.append("")
     return "\n".join(out).rstrip()
 
 
@@ -427,9 +432,12 @@ def cmd_edit(engine: Engine, tid: str, p: str) -> None:
 COMMENT_HELP = "# Write your comment above. Lines starting with '#' are ignored.\n# An empty comment aborts.\n"
 
 
-def cmd_comment(engine: Engine, tid: str, message: str | None) -> None:
+def cmd_comment(engine: Engine, tid: str, message: str | None, paths: list[str] | None = None) -> None:
+    files = read_files(paths or [])
     if message is None and not sys.stdin.isatty():
         message = sys.stdin.read()
+    if message is None and files:
+        message = ""  # files only: no editor
     if message is None:
         with tempfile.NamedTemporaryFile("w+", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write("\n\n" + COMMENT_HELP)
@@ -441,10 +449,12 @@ def cmd_comment(engine: Engine, tid: str, message: str | None) -> None:
         finally:
             tmp.unlink(missing_ok=True)
     try:
-        c, _ = engine.add_comment(tid, message)
-    except ValidationError:
-        fail("empty comment, nothing added")
-    print(f"commented on {tid} as {c['author']}  ({c['id']})")
+        c, _ = engine.add_comment(tid, message, files)
+    except ValidationError as e:
+        fail("empty comment, nothing added" if "empty" in str(e) else str(e))
+    extra = f", {len(c['attachments'])} file(s): " + ", ".join(a["name"] for a in c["attachments"]) \
+        if c["attachments"] else ""
+    print(f"commented on {tid} as {c['author']}  ({c['id']}){extra}")
 
 
 def parse_status(value: str, ap: argparse.ArgumentParser) -> str:
@@ -500,11 +510,40 @@ def cmd_attach(engine: Engine, tid: str, paths: list[str]) -> None:
 
 
 def all_attachments(engine: Engine, tid: str) -> list[tuple[str, str, dict]]:
-    """(owner, label, attachment) for the description and every comment of a ticket."""
+    """(owner, label, attachment) in numbering order: the description's files first, then
+    each comment's, oldest comment first, so a number stays valid when comments are added."""
     out = [(DESCRIPTION, "description", a) for a in engine.get_task(tid)["attachments"]]
-    for c in engine.get_comments(tid):
+    for c in sorted(engine.get_comments(tid), key=lambda c: (c["created_at"], c["id"])):
         out += [(c["id"], f"comment {c['id']}", a) for a in c["attachments"]]
     return out
+
+
+def attachment_lines(have: list[tuple[str, str, dict]]) -> list[str]:
+    width = len(str(len(have)))
+    return [f"  {n:>{width}}  {a['name']}  ({a['size'] / 1024:.1f} KB)  {label}"
+            for n, (_, label, a) in enumerate(have, 1)]
+
+
+def pick_attachment(have: list[tuple[str, str, dict]], spec: str, tid: str) -> tuple[str, str]:
+    """Resolve NAME, OWNER/NAME or a number from the ticket view to (owner, name)."""
+    if "/" in spec:
+        owner, _, bare = spec.partition("/")
+        hits = [(o, a["name"]) for o, _, a in have if o == owner and a["name"] == bare]
+    elif spec in {a["name"] for _, _, a in have}:
+        hits = [(o, a["name"]) for o, _, a in have if a["name"] == spec]
+    elif spec.isdigit():
+        if not 1 <= int(spec) <= len(have):
+            fail(f"{tid} has no attachment number {spec} (it has 1-{len(have)})")
+        o, _, a = have[int(spec) - 1]
+        hits = [(o, a["name"])]
+    else:
+        hits = []
+    if not hits:
+        fail(f"{tid} has no attachment {spec!r}; it has:\n" + "\n".join(attachment_lines(have)))
+    if len(hits) > 1:
+        fail(f"several attachments are called {spec!r}; give a number or OWNER/NAME:\n"
+             + "\n".join(l for l, (_, _, a) in zip(attachment_lines(have), have) if a["name"] == spec))
+    return hits[0]
 
 
 def launch(path: Path) -> None:
@@ -519,28 +558,28 @@ def launch(path: Path) -> None:
                      stderr=subprocess.DEVNULL, start_new_session=True)
 
 
-def cmd_open(engine: Engine, tid: str, names: list[str], path_only: bool) -> None:
+def ask(prompt: str) -> str:
+    return input(prompt)
+
+
+def cmd_open(engine: Engine, tid: str, specs: list[str], path_only: bool) -> None:
     """Open attachments (description or comments) with the default application."""
     have = all_attachments(engine, tid)
     if not have:
         fail(f"{tid} has no attachments")
-    if not names:
-        if len(have) != 1:
-            fail(f"{tid} has {len(have)} attachments; name one: "
-                 + ", ".join(sorted({a['name'] for _, _, a in have})))
-        names = [have[0][2]["name"]]
+    if not specs and len(have) > 1:
+        listing = "\n".join(attachment_lines(have))
+        if not sys.stdin.isatty():
+            fail(f"{tid} has {len(have)} attachments; give a number or name:\n{listing}")
+        print(listing)
+        specs = ask("open which (numbers or names, space-separated)? ").split()
+        if not specs:
+            fail("nothing chosen")
+    specs = specs or ["1"]
     targets = []
-    for name in names:
-        owner, _, bare = name.partition("/")
-        hits = [(o, l) for o, l, att in have if att["name"] == name] if not bare else \
-               [(o, l) for o, l, att in have if o == owner and att["name"] == bare]
-        if not hits:
-            fail(f"{tid} has no attachment {name!r} (it has: "
-                 + ", ".join(sorted({att['name'] for _, _, att in have})) + ")")
-        if len(hits) > 1:
-            fail(f"several attachments are called {name!r}; say which one: "
-                 + ", ".join(f"{o}/{name}" for o, _ in hits))
-        targets.append(engine.attachment_path(tid, hits[0][0], bare or name))
+    for spec in specs:
+        owner, name = pick_attachment(have, spec, tid)
+        targets.append(engine.attachment_path(tid, owner, name))
     for path in targets:
         if path_only:
             print(path)
@@ -549,12 +588,17 @@ def cmd_open(engine: Engine, tid: str, names: list[str], path_only: bool) -> Non
             print(f"opening {path.relative_to(engine.root)}")
 
 
-def cmd_detach(engine: Engine, tid: str, names: list[str]) -> None:
-    have = {a["name"] for a in engine.get_task(tid)["attachments"]}
-    missing = [n for n in names if n not in have]
-    if missing:
-        fail(f"{tid} has no attachment {', '.join(map(repr, missing))}"
-             + (f" (it has: {', '.join(sorted(have))})" if have else " (it has none)"))
+def cmd_detach(engine: Engine, tid: str, specs: list[str]) -> None:
+    have = all_attachments(engine, tid)
+    if not have:
+        fail(f"{tid} has no attachments")
+    names = []
+    for spec in specs:
+        owner, name = pick_attachment(have, spec, tid)
+        if owner != DESCRIPTION:
+            fail(f"{spec!r} belongs to a comment; only the description's attachments can be "
+                 "removed here (comments: edit or delete them in the app)")
+        names.append(name)
     engine.save_task({"id": tid}, remove_files=names)
     print(f"{tid}: removed {', '.join(names)}")
 
@@ -591,14 +635,17 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
                f"  • {p} . TKT-101 edit            open the ticket file in $VISUAL / $EDITOR\n"
                f"  • {p} . TKT-101 comment         write a comment in $EDITOR\n"
                f"  • {p} . TKT-101 -c -m 'done'    add a comment from the command line\n"
+               f"  • {p} . TKT-101 comment -m 'see logs' -f trace.txt shot.png   comment with files (-f)\n"
                f"  • echo 'looks good' | {p} . TKT-101 comment\n"
                f"  • {p} . TKT-101 status doing    todo | doing | done | blocked (-s done also works)\n"
                f"  • {p} . TKT-101 done            shortcuts: start (doing), done, reopen (todo)\n"
                f"  • {p} . TKT-101 priority high   set the priority (high | medium | low; -p h also works)\n"
                f"  • {p} . TKT-101 attach shot.png log.txt   attach files to the description (-a)\n"
                f"  • {p} . TKT-101 detach shot.png           remove an attachment (-d)\n"
-               f"  • {p} . TKT-101 open shot.png             open an attachment (description or comment) in the\n"
-               "      default application (xdg-open / open / start); -o works too; --path prints the location\n"
+               f"  • {p} . TKT-101 open 2                    open attachment number 2 of the ticket view, or by\n"
+               "      name; works for the description's and comments' files, in the default application\n"
+               "      (xdg-open / open / start); -o works too; --path prints the location instead;\n"
+               "      without a name it asks (on a terminal) or lists the numbers\n"
                f"  • {p} . TKT-101 blocked 104     TKT-101 blocks TKT-104\n"
                f"  • {p} . TKT-104 block-by 101    TKT-104 is blocked by TKT-101 (same link)\n"
                f"  • {p} . TKT-101 remove blocked 104       remove that link\n"
@@ -614,6 +661,8 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
     ap.add_argument("-e", "--edit", action="store_true", help="same as the edit action")
     ap.add_argument("-c", "--comment", action="store_true", help="same as the comment action")
     ap.add_argument("-m", "--message", help="comment text (with comment)")
+    ap.add_argument("-f", "--file", nargs="+", metavar="FILE",
+                    help="attach files to the comment (with comment; the text may then be empty)")
     ap.add_argument("-p", "--priority", metavar="VALUE", help="set the priority: high | medium | low")
     ap.add_argument("-s", "--status", metavar="VALUE", help="set the status: todo | doing | done | blocked")
     ap.add_argument("-a", "--attach", nargs="+", metavar="FILE", help="attach files to the description")
@@ -675,8 +724,8 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
         ap.error("choose one of edit, comment, status, priority, attach, detach, open or dependency changes")
     if any(o[0] == "dep" and not o[3] for o in ops):
         ap.error("give at least one ticket id")
-    if a.message is not None and not any(o[0] == "comment" for o in ops):
-        ap.error("-m/--message needs comment (-c)")
+    if (a.message is not None or a.file) and not any(o[0] == "comment" for o in ops):
+        ap.error("-m/--message and -f/--file need comment (-c)")
     tid = find_ticket(engine, spec)
     if not ops:
         t = engine.get_task(tid)
@@ -687,7 +736,7 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
     elif ops[0][0] == "edit":
         cmd_edit(engine, tid, p)
     elif ops[0][0] == "comment":
-        cmd_comment(engine, tid, a.message)
+        cmd_comment(engine, tid, a.message, a.file)
     elif ops[0][0] == "priority":
         cmd_priority(engine, tid, ops[0][1], ap)
     elif ops[0][0] == "status":

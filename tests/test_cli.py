@@ -322,7 +322,7 @@ def test_attach_and_detach(proj, capsys, tmp_path):
     assert "removed note.txt, note-2.txt" in out(capsys)
     proj("TKT-101", "--json")
     assert [a["name"] for a in json.loads(out(capsys))["attachments"]] == ["shot.png"]
-    with pytest.raises(SystemExit, match="no attachment 'ghost.txt'.*shot.png"):
+    with pytest.raises(SystemExit, match=r"(?s)no attachment 'ghost.txt'.*shot.png"):
         proj("TKT-101", "detach", "ghost.txt")
     with pytest.raises(SystemExit, match="not a file"):
         proj("TKT-101", "attach", str(tmp_path / "nope"))
@@ -368,7 +368,7 @@ def test_open_attachments(proj, capsys, tmp_path, monkeypatch):
     proj("TKT-101", "open", "note.txt")  # found in a comment
     assert opened == [proj.repo / f".todo/tasks/TKT-101/attachments/{c['id']}/note.txt"]
     assert "opening .todo/tasks/TKT-101/attachments/" in out(capsys)
-    with pytest.raises(SystemExit, match="several attachments.*description/shot.png"):
+    with pytest.raises(SystemExit, match=r"(?s)several attachments.*1  shot.png.*3  shot.png"):
         proj("TKT-101", "open", "shot.png")  # in the description and in the comment
     opened.clear()
     proj("TKT-101", "-o", "description/shot.png", f"{c['id']}/shot.png")
@@ -376,10 +376,10 @@ def test_open_attachments(proj, capsys, tmp_path, monkeypatch):
     out(capsys)
     proj("TKT-101", "open", "note.txt", "--path")
     assert out(capsys).strip().endswith(f"{c['id']}/note.txt") and len(opened) == 2  # printed, not launched
-    with pytest.raises(SystemExit, match="no attachment 'ghost'.*note.txt"):
+    with pytest.raises(SystemExit, match=r"(?s)no attachment 'ghost'.*note.txt"):
         proj("TKT-101", "open", "ghost")
-    with pytest.raises(SystemExit, match="has 2 attachments|has 3 attachments"):
-        proj("TKT-101", "open")  # several: must name one
+    with pytest.raises(SystemExit, match=r"(?s)has 3 attachments.*2  note.txt"):
+        proj("TKT-101", "open")  # several, not a terminal: lists them
     proj("TKT-102", "attach", str(note))
     out(capsys)
     opened.clear()
@@ -400,3 +400,75 @@ def test_launch_without_opener(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.sys, "platform", "darwin")
     cli.launch(tmp_path / "y")
     assert calls[-1][0] == "open"
+
+
+def test_attachment_numbers(proj, capsys, tmp_path, monkeypatch):
+    from engine import Engine
+    opened = []
+    monkeypatch.setattr(cli, "launch", lambda path: opened.append(path.name))
+    a, b = tmp_path / "a.png", tmp_path / "b.txt"
+    a.write_bytes(b"1")
+    b.write_text("2")
+    proj("TKT-101", "attach", str(a))
+    eng = Engine(proj.repo, db_path=proj.db)
+    eng.add_comment("TKT-101", "first", files=[("c.log", b"3")])
+    eng.add_comment("TKT-101", "second", files=[("d.log", b"4"), ("e.log", b"5")])
+    out(capsys)
+    proj("TKT-101")
+    text = out(capsys)  # numbered: description first, then comments oldest first
+    assert "1  a.png" in text and "attachment 2: c.log" in text
+    assert "attachment 3: d.log" in text and "attachment 4: e.log" in text
+    proj("TKT-101", "open", "2", "4")
+    assert opened == ["c.log", "e.log"]
+    proj("TKT-101", "open", "1", "--path")
+    assert out(capsys).strip().endswith("attachments/description/a.png")
+    # a new comment never renumbers the existing ones
+    eng.add_comment("TKT-101", "third", files=[("f.log", b"6")])
+    proj("TKT-101", "open", "2")
+    assert opened[-1] == "c.log"
+    with pytest.raises(SystemExit, match=r"no attachment number 9 \(it has 1-5\)"):
+        proj("TKT-101", "open", "9")
+    with pytest.raises(SystemExit, match="belongs to a comment"):
+        proj("TKT-101", "detach", "2")
+    proj("TKT-101", "detach", "1")  # description attachment by number
+    assert "removed a.png" in out(capsys)
+    out(capsys)
+    # a file literally named like a number wins over the index
+    proj("TKT-101", "attach", str(b))
+    eng.save_task({"id": "TKT-101"}, files=[("2", b"named two")])
+    opened.clear()
+    proj("TKT-101", "open", "2")
+    assert opened == ["2"]
+    # no name, several files: a terminal gets a prompt
+    monkeypatch.setattr("sys.stdin", type("TTY", (), {"isatty": lambda self: True})())
+    monkeypatch.setattr(cli, "ask", lambda prompt: "b.txt")
+    opened.clear()
+    proj("TKT-101", "open")
+    shown = out(capsys)
+    assert opened == ["b.txt"] and "1  b.txt" in shown and "3  c.log" in shown  # the list was shown first
+    monkeypatch.setattr(cli, "ask", lambda prompt: "")
+    with pytest.raises(SystemExit, match="nothing chosen"):
+        proj("TKT-101", "open")
+
+
+def test_comment_with_files(proj, capsys, tmp_path, monkeypatch):
+    f1, f2 = tmp_path / "trace.txt", tmp_path / "shot.png"
+    f1.write_text("boom")
+    f2.write_bytes(b"\x89PNG")
+    monkeypatch.setattr("sys.stdin", type("TTY", (), {"isatty": lambda self: True})())
+    proj("TKT-101", "comment", "-m", "see logs", "-f", str(f1), str(f2))
+    assert "2 file(s): trace.txt, shot.png" in out(capsys)
+    c = __import__("engine").Engine(proj.repo, db_path=proj.db).get_comments("TKT-101")[0]
+    assert c["body"] == "see logs" and [a["name"] for a in c["attachments"]] == ["trace.txt", "shot.png"]
+    assert (proj.repo / f".todo/tasks/TKT-101/attachments/{c['id']}/trace.txt").read_text() == "boom"
+    proj("TKT-101", "-c", "-f", str(f1))  # files only: no editor, no text
+    assert "1 file(s): trace.txt" in out(capsys)
+    with pytest.raises(SystemExit, match="not a file"):
+        proj("TKT-101", "-c", "-m", "x", "-f", str(tmp_path / "nope"))
+    with pytest.raises(SystemExit):
+        proj("TKT-101", "-f", str(f1))  # -f needs comment
+    out(capsys)
+    proj("TKT-101")
+    view = out(capsys)  # numbered oldest comment first: 1-2 in "see logs", 3 in the files-only comment
+    assert "attachment 1: trace.txt" in view and "attachment 2: shot.png" in view
+    assert "attachment 3: trace.txt" in view

@@ -64,12 +64,12 @@ _utd() {
                 blocked|block-by|-b|-bb|-rb|-rbb|--blocked|--block-by|--remove-blocked|--remove-block-by)
                     COMPREPLY=($(compgen -W "$(ids)" -- "$cur")); return ;;
                 remove) COMPREPLY=($(compgen -W "blocked block-by" -- "$cur")); return ;;
-                attach|--attach) compopt -o filenames 2>/dev/null; COMPREPLY=($(compgen -f -- "$cur")); return ;;
+                attach|--attach|-f|--file) compopt -o filenames 2>/dev/null; COMPREPLY=($(compgen -f -- "$cur")); return ;;
             esac
             if [ "$COMP_CWORD" -eq 3 ] && [[ "$cur" != -* ]]; then
                 COMPREPLY=($(compgen -W "edit comment status start done reopen priority attach detach open blocked block-by remove" -- "$cur"))
             else
-                COMPREPLY=($(compgen -W "-e -c -m -s -p -a -d -o --path -b -bb -rb -rbb --json -h" -- "$cur"))
+                COMPREPLY=($(compgen -W "-e -c -m -f -s -p -a -d -o --path -b -bb -rb -rbb --json -h" -- "$cur"))
             fi ;;
     esac
 }
