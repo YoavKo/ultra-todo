@@ -236,3 +236,61 @@ def test_escape_raw_newlines():
     with pytest.raises(ValueError):
         loads_forgiving("{ nope")                                           # real errors are still errors
 
+
+
+# ---- a file that cannot be read is looked at again, never marked as done --------------------
+def test_unreadable_files_are_retried_and_their_warning_clears(repo, make_engine, monkeypatch):
+    import engine as E
+    import json5
+    write_task(repo, "OK-1", title="fine")
+    bad = repo / ".todo/tasks/ML-1/main.json5"
+    bad.parent.mkdir(parents=True)
+    bad.write_text('{"id": "ML-1", "title": "multi", "description": "a\nb"}')
+    commit_all(repo)
+    good_loader = E.loads_forgiving
+    monkeypatch.setattr(E, "loads_forgiving", json5.loads)  # a loader that cannot read it
+    eng = make_engine()
+    eng.refresh()
+    assert [t["id"] for t in eng.list_tasks()] == ["OK-1"] and len(eng.warnings) == 1
+    eng.refresh()
+    eng.refresh()
+    assert len(eng.warnings) == 1                       # looked at again, but not warned about again
+    monkeypatch.setattr(E, "loads_forgiving", good_loader)  # the file is now readable, unchanged
+    eng.refresh()
+    assert {t["id"] for t in eng.list_tasks()} == {"OK-1", "ML-1"} and eng.warnings == []
+    eng.refresh()  # and the state is clean again: a plain cache hit
+    assert make_engine().db.execute("SELECT dirty_key FROM projects").fetchone()[0] == ""
+
+
+def test_retry_state_survives_a_new_process(repo, make_engine, monkeypatch, db_path):
+    import engine as E
+    import json5
+    write_task(repo, "T-1", title="v1")
+    commit_all(repo)
+    make_engine().refresh()
+    p = repo / ".todo/tasks/T-1/main.json5"
+    p.write_text('{"id": "T-1", "title": "v2", "description": "x\ny"}')  # now unreadable for a strict loader
+    commit_all(repo)
+    good = E.loads_forgiving
+    monkeypatch.setattr(E, "loads_forgiving", json5.loads)
+    first = make_engine()
+    first.refresh()
+    assert first.get_task("T-1")["title"] == "v1" and first.warnings        # the old row stays, with a warning
+    monkeypatch.setattr(E, "loads_forgiving", good)
+    second = make_engine()  # a fresh Engine (the next CLI command) on the same cache
+    second.refresh()
+    assert second.get_task("T-1")["title"] == "v2" and second.warnings == []
+
+
+def test_a_bad_file_that_is_then_fixed_clears_its_warning(repo, make_engine):
+    write_task(repo, "T-2", title="ok")
+    commit_all(repo)
+    eng = make_engine()
+    eng.refresh()
+    p = repo / ".todo/tasks/T-2/main.json5"
+    p.write_text("{ nope")
+    eng.refresh()
+    assert len(eng.warnings) == 1 and eng.get_task("T-2")["title"] == "ok"
+    p.write_text('{"id": "T-2", "title": "fixed"}')
+    eng.refresh()
+    assert eng.warnings == [] and eng.get_task("T-2")["title"] == "fixed"

@@ -22,7 +22,7 @@ import platformdirs
 
 log = logging.getLogger("ultra-todo")
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5  # 5: rebuild once so files the new forgiving loader accepts are read
 STATUSES = ("todo", "in_progress", "done", "blocked")
 PRIORITIES = ("high", "medium", "low")  # in sort order
 DEFAULT_PRIORITY = "medium"
@@ -370,6 +370,8 @@ class Engine:
         self.lock = threading.RLock()
         self._local = threading.local()
         self.warnings: list[str] = []
+        self._bad: dict[str, str] = {}  # file -> its warning, while it cannot be read
+        self._retry: set[str] = set()   # files that failed in the latest refresh
         self._init_db()
 
     # ---- db ----------------------------------------------------------
@@ -444,6 +446,7 @@ class Engine:
         """Bring the index in sync with the repo (cheap when nothing changed)."""
         with self.lock:
             summary = Summary()
+            self._retry = set()
             head = self.head()
             dirty = self.dirty_files()
             fp = self._fingerprint(dirty)
@@ -475,7 +478,8 @@ class Engine:
             " VALUES(?,?,?,?) ON CONFLICT(project_path) DO UPDATE SET"
             " last_scanned_commit=excluded.last_scanned_commit,"
             " dirty_key=excluded.dirty_key, dirty_files=excluded.dirty_files",
-            (self.project, head, fp, json.dumps(dirty)))
+            (self.project, head, fp + ("!" if self._retry else ""),  # "!" never matches: look again next time
+             json.dumps(sorted(set(dirty) | self._retry))))
 
     def record_state(self) -> None:
         """Mark the repo's current state as indexed (after our own writes)."""
@@ -525,9 +529,24 @@ class Engine:
                     else:
                         self._sync_comment(db, tid, cid, path, summary)
                 except (ValidationError, ValueError, OSError) as e:
-                    msg = f"{rel}: {e}"
-                    log.warning("skipping %s", msg)
-                    self.warnings.append(msg)
+                    self._mark_bad(rel, f"{rel}: {e}")
+                    self._retry.add(rel)  # not "done": read it again on the next refresh
+                else:
+                    self._clear_bad(rel)
+
+    def _mark_bad(self, rel: str, msg: str) -> None:
+        old = self._bad.get(rel)
+        if old != msg:
+            log.warning("skipping %s", msg)
+            if old in self.warnings:
+                self.warnings.remove(old)
+            self.warnings.append(msg)
+        self._bad[rel] = msg
+
+    def _clear_bad(self, rel: str) -> None:
+        old = self._bad.pop(rel, None)
+        if old in self.warnings:
+            self.warnings.remove(old)
 
     def _sync_task(self, db, tid: str, path: Path, summary: Summary) -> None:
         path = self.task_path(tid)  # whichever layout the ticket is in (new wins if both exist)
