@@ -106,6 +106,8 @@ table.tasks th, table.tasks td { padding: 8px 10px; border-block-end: 1px solid 
 .composer.drop, #task-form.drop { outline: 2px dashed var(--accent); }
 .desc-files { display: flex; flex-direction: column; gap: 6px; }
 .desc-files .att { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.att-actions { display: flex; gap: 10px; align-items: center; }
+.open-file { font-size: .85rem; }
 
 dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
   color: var(--fg); min-inline-size: min(440px, 90vw); }

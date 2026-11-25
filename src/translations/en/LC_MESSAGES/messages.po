@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ultra-todo 0.1.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-25 01:24+0200\n"
+"POT-Creation-Date: 2026-11-25 01:59+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -103,6 +103,15 @@ msgstr ""
 
 #, python-format
 msgid "Task %(id)s deleted."
+msgstr ""
+
+msgid ""
+"Opening files is only available when the server runs on this computer "
+"(localhost)."
+msgstr ""
+
+#, python-format
+msgid "Opening %(name)s…"
 msgstr ""
 
 msgid "Updated. Index rebuilt."
@@ -252,6 +261,12 @@ msgid "Does not block anything."
 msgstr ""
 
 msgid "Add"
+msgstr ""
+
+msgid "Open in the default application"
+msgstr ""
+
+msgid "Open"
 msgstr ""
 
 #, python-format

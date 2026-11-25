@@ -70,9 +70,14 @@ def linkify(text: str) -> Markup:
     return Markup("").join(out).replace("\n", Markup("<br>"))
 
 
-def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
+LOOPBACK = ('127.0.0.1', '::1', 'localhost')
+
+
+def create_app(engine: Engine, default_lang: str | None = None, can_open: bool = False) -> Flask:
+    """`can_open`: show the Open button for attachments (launches the desktop's default app on
+    this machine, so only for a server bound to localhost)."""
     app = Flask(__name__)
-    app.config.update(DEFAULT_LANG=default_lang, ENGINE=engine,
+    app.config.update(DEFAULT_LANG=default_lang, ENGINE=engine, CAN_OPEN=can_open,
                       MAX_CONTENT_LENGTH=engine.max_attachment_bytes * 5 + 1024 * 1024,
                       SECRET_KEY=secrets.token_hex(32))
     init_babel(app)
@@ -99,6 +104,7 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
                 "priority_label": priority_label, "project_name": engine.root.name,
                 "project_path": engine.project, "csrf_token": request.cookies.get(CSRF_COOKIE)
                 or getattr(request, "_new_csrf", ""), "SUPPORTED": SUPPORTED,
+                "can_open": app.config["CAN_OPEN"],
                 "ngettext": ngettext}
 
     # ---- CSRF (double-submit cookie) ---------------------------------
@@ -324,6 +330,18 @@ def create_app(engine: Engine, default_lang: str | None = None) -> Flask:
         resp.headers["Content-Security-Policy"] = "default-src 'none'; sandbox"
         return resp
 
+    @app.post("/task/<task_id>/open-attachment/<cid>/<path:name>")
+    def open_attachment(task_id, cid, name):
+        if not app.config["CAN_OPEN"] or request.remote_addr not in LOOPBACK:
+            return jsonify({"error": _("Opening files is only available when the server runs "
+                                       "on this computer (localhost).")}), 403
+        path = engine.attachment_path(task_id, cid, name)  # 404 for anything outside the task
+        try:
+            cli.launch(path)
+        except cli.OpenError as e:
+            return jsonify({"error": str(e)}), 501
+        return jsonify({"message": _("Opening %(name)s…", name=path.name)})
+
     # ---- language ----------------------------------------------------
     @app.post("/lang")
     def set_lang():
@@ -420,6 +438,7 @@ def commands_help() -> str:
             (f"{p} REPO new [TITLE] [flags]", "create a ticket (-p -a -t -d --status)"),
             (f"{p} REPO pull | save", "Update / Save work: pull, or commit .todo/ and push"),
             (f"{p} REPO migrate", "move tickets from the old ID.json5 layout to ID/main.json5"),
+            (f"{p} REPO repl", "interactive prompt with Tab completion"),
             (f"{p} REPO ID", "show a ticket"),
             (f"{p} REPO ID status|-s VALUE", "todo | doing | done | blocked (also: start, done, reopen)"),
             (f"{p} REPO ID edit|-e", "open the ticket file in $EDITOR"),
@@ -543,7 +562,7 @@ def main(argv=None) -> None:
         argv = ["-h"]
     ap = argparse.ArgumentParser(
         prog=prog(), description="Local GitOps task manager",
-        usage="utd [REPO [ls | board | next | new | pull | save | migrate | serve | ID [action]] | ls | open NAME|NUMBER | forget NAME|NUMBER,...] [flags]" if utd else None,
+        usage="utd [REPO [ls | board | next | new | pull | save | migrate | repl | serve | ID [action]] | ls | open NAME|NUMBER | forget NAME|NUMBER,...] [flags]" if utd else None,
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=commands_help())
     ap.add_argument("--target", required=not utd,
                     help=argparse.SUPPRESS if utd else "path of the git repository to manage")
@@ -579,7 +598,7 @@ def main(argv=None) -> None:
              else ("refreshed" if s.changed else "cache hit"))
     if args.db is None:
         repos.remember(engine.project)
-    app = create_app(engine, args.lang)
+    app = create_app(engine, args.lang, can_open=args.host in LOOPBACK)
     sock = bind_socket(args.host, args.port)
     port = sock.getsockname()[1]
     log.info("serving %s on http://%s:%d/", engine.project, args.host, port)

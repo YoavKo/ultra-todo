@@ -35,6 +35,8 @@
   {% endif %}
 {% endmacro %}
 
+{% macro open_btn(task, cid, a) %}{% if can_open %}<button type="button" class="link open-file" data-open-attachment="{{ url_for('open_attachment', task_id=task.id, cid=cid, name=a.name) }}" title="{{ _('Open in the default application') }}">{{ _('Open') }}</button>{% endif %}{% endmacro %}
+
 {% block content %}
 <div class="task-layout">
 <section class="panel">
@@ -129,7 +131,8 @@
             {% else %}
               <a href="{{ href }}" class="file">📎 <bdi>{{ a.name }}</bdi> <small class="muted">{{ (a.size / 1024)|round(1) }} KB</small></a>
             {% endif %}
-            <label class="check"><input type="checkbox" name="remove" value="{{ a.name }}"> {{ _('Remove') }}</label>
+            <span class="att-actions">{{ open_btn(task, 'description', a) }}
+            <label class="check"><input type="checkbox" name="remove" value="{{ a.name }}"> {{ _('Remove') }}</label></span>
           </div>
         {% endfor %}
       </div>
@@ -187,6 +190,7 @@
         {% else %}
           <a href="{{ href }}" class="file">📎 <bdi>{{ a.name }}</bdi> <small class="muted">{{ (a.size / 1024)|round(1) }} KB</small></a>
         {% endif %}
+        {{ open_btn(task, c.id, a) }}
       {% endfor %}
     </div>
     {% endif %}

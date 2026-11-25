@@ -195,3 +195,60 @@ def test_description_attachments_in_the_task_form(client):
                    "files": [(io.BytesIO(b"hi"), "n.txt")]})
     assert r.status_code == 302
     assert [a["name"] for a in client.eng.get_task("NEW-9")["attachments"]] == ["n.txt"]
+
+
+@pytest.fixture
+def local_client(repo, make_engine, monkeypatch):
+    import cli
+    write_task(repo, "TKT-101", title="T")
+    commit_all(repo)
+    eng = make_engine()
+    eng.refresh()
+    eng.save_task({"id": "TKT-101"}, files=[("log.txt", b"boom")])
+    c, _ = eng.add_comment("TKT-101", "see", files=[("shot.png", b"\x89PNG")])
+    app = create_app(eng, can_open=True)
+    app.config["TESTING"] = True
+    cl = app.test_client()
+    cl.get("/")
+    cl.token = cl.get_cookie("csrf_token").value
+    cl.eng, cl.cid, cl.opened = eng, c["id"], []
+    monkeypatch.setattr(cli, "launch", lambda path: cl.opened.append(path))
+    return cl
+
+
+def test_open_button_and_endpoint(local_client):
+    cl = local_client
+    html = cl.get("/task/TKT-101").get_data(as_text=True)
+    assert html.count("data-open-attachment") == 2  # the description's file and the comment's
+    assert "/task/TKT-101/open-attachment/description/log.txt" in html
+    r = cl.post("/task/TKT-101/open-attachment/description/log.txt", headers={"X-CSRF-Token": cl.token})
+    assert r.status_code == 200 and "log.txt" in r.get_json()["message"]
+    r = cl.post(f"/task/TKT-101/open-attachment/{cl.cid}/shot.png", headers={"X-CSRF-Token": cl.token})
+    assert r.status_code == 200
+    assert [p.name for p in cl.opened] == ["log.txt", "shot.png"]
+    assert cl.post("/task/TKT-101/open-attachment/description/log.txt").status_code == 403  # no CSRF token
+    bad = cl.post("/task/TKT-101/open-attachment/description/..%2Fmain.json5", headers={"X-CSRF-Token": cl.token})
+    assert bad.status_code == 404 and len(cl.opened) == 2
+    r = cl.post("/task/TKT-101/open-attachment/description/log.txt", headers={"X-CSRF-Token": cl.token},
+                environ_base={"REMOTE_ADDR": "10.1.2.3"})
+    assert r.status_code == 403 and len(cl.opened) == 2  # only requests from this machine
+
+
+def test_open_disabled_by_default(client):
+    import io
+    post(client, "/task/TKT-101", content_type="multipart/form-data",
+         data={"title": "x", "status": "todo", "csrf_token": client.token,
+               "files": [(io.BytesIO(b"1"), "a.txt")]})
+    assert "data-open-attachment" not in client.get("/task/TKT-101").get_data(as_text=True)
+    r = client.post("/task/TKT-101/open-attachment/description/a.txt", headers={"X-CSRF-Token": client.token})
+    assert r.status_code == 403
+
+
+def test_open_reports_a_missing_opener(local_client, monkeypatch):
+    import cli
+    def boom(path):
+        raise cli.OpenError("cannot open files here: xdg-open not found")
+    monkeypatch.setattr(cli, "launch", boom)
+    r = local_client.post("/task/TKT-101/open-attachment/description/log.txt",
+                          headers={"X-CSRF-Token": local_client.token})
+    assert r.status_code == 501 and "xdg-open" in r.get_json()["error"]

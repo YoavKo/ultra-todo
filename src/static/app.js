@@ -205,6 +205,12 @@
     });
   });
 
+  // ---- open an attachment in the desktop's default application -------
+  document.querySelectorAll("[data-open-attachment]").forEach((b) => b.addEventListener("click", async () => {
+    try { toast((await api(b.dataset.openAttachment)).message, "ok"); }
+    catch (e) { toast(e.message, "error"); }
+  }));
+
   document.querySelectorAll("form[data-confirm]").forEach((f) =>
     f.addEventListener("submit", (e) => { if (!confirm(T.confirmDelete)) e.preventDefault(); }));
 })();

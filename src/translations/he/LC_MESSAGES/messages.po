@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ultra-todo 0.1.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-25 01:24+0200\n"
+"POT-Creation-Date: 2026-11-25 01:59+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: he\n"
@@ -108,6 +108,16 @@ msgstr "התלות הוסרה."
 #, python-format
 msgid "Task %(id)s deleted."
 msgstr "המשימה %(id)s נמחקה."
+
+msgid ""
+"Opening files is only available when the server runs on this computer "
+"(localhost)."
+msgstr ""
+"פתיחת קבצים זמינה רק כשהשרת רץ במחשב הזה (localhost)."
+
+#, python-format
+msgid "Opening %(name)s…"
+msgstr "פותח את %(name)s…"
 
 msgid "Updated. Index rebuilt."
 msgstr "עודכן. האינדקס נבנה מחדש."
@@ -257,6 +267,12 @@ msgstr "לא חוסמת אף משימה."
 
 msgid "Add"
 msgstr "הוספה"
+
+msgid "Open in the default application"
+msgstr "פתח באפליקציית ברירת המחדל"
+
+msgid "Open"
+msgstr "פתח"
 
 #, python-format
 msgid "Waiting on %(num)d open task"

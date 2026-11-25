@@ -17,7 +17,7 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 - **Priority** – high / medium / low (default medium): coloured badge on cards, priority filter, high-priority tasks listed first
 - **Dependencies** – each task page shows what blocks it and what it blocks, with one-click × to remove a link and a picker to add one (cycles are rejected)
 - **Tags** on tasks, with filter chips (AND / OR, shareable via URL)
-- **Attachments on the ticket** – attach images and files to a ticket's description (task form: choose, paste or drop; CLI: `utd . TKT-101 attach FILE…`), stored in the ticket's own directory
+- **Attachments on the ticket** – attach images and files to a ticket's description (task form: choose, paste or drop; CLI: `utd . TKT-101 attach FILE…`), stored in the ticket's own directory; an **Open** button next to every attachment (ticket and comments) opens it in your desktop's default application
 - **Comments** per task: newest first, author and time stamped by the server, editable, with image/file attachments stored next to the task
 - **Update** button: `git pull --ff-only`, then the index is refreshed from the diff (rebase offered if the branch diverged; aborted cleanly on conflict)
 - **Save work** button: commits only `.todo/` changes (editable message) and pushes; never force-pushes, never stages files outside `.todo/`
@@ -110,6 +110,7 @@ utd . next                    # what to work on: open, unblocked, highest priori
 utd . TKT-101                 # show a ticket (case-insensitive; a bare 101 works too)
 utd my-repo ls --status todo  # by known repo name (or number)
 utd . serve --port 9000       # serve the web UI (what `utd` alone used to do)
+utd . repl                    # interactive prompt: the same commands without the repo name, with Tab completion
 ```
 
 (What the board, list and ticket views look like: see [Screenshots](#screenshots).)
@@ -149,10 +150,27 @@ Details:
 - `save` commits whatever changed under `.todo/` and then pushes; if the branch has no upstream it has already committed and tells you to rerun with `--set-upstream`. `pull` stops cleanly on conflicts, like the app.
 - Colours follow the terminal: off when piped, off with `NO_COLOR`, forced with `CLICOLOR_FORCE=1`.
 - **Attachment numbers**: the ticket view numbers every attachment of the ticket: the description's files first, then the comments' oldest first (so a number never changes when someone comments later). `open` and `detach` take a number or a name; `OWNER/NAME` (`description/shot.png`, `COMMENT-ID/shot.png`) settles duplicate names, and a file whose name is a number wins over the index. `detach` only removes the description's files (comment files: edit the comment in the app).
+- The web UI's **Open** button does the same as `open`: the server launches the file with the desktop's default application. It only exists when the server is bound to localhost (the default) and only accepts requests from this machine (`--host 0.0.0.0` hides it), so nobody on the network can start programs on yours.
 - `open` uses `xdg-open` (Linux), `open` (macOS) or the Windows default; `--path` prints the file location instead (SSH, scripts). With one attachment no name is needed; with several it asks (on a terminal) or lists the numbers and exits.
 - `utd . migrate` moves tickets from the old flat `ID.json5` layout to `ID/main.json5` (see [File formats](#file-formats)); nothing is committed until `save`.
 - Per-command help: `utd . ls -h`, `board -h`, `new -h`, `next -h`, `pull -h`, `save -h`, `utd . TKT-1 -h`.
 - Breaking change: `utd` alone and `utd PATH` used to serve a repo; that is now `utd . serve` / `utd PATH serve` (`utd open NAME` and `ultra-todo --target PATH` are unchanged).
+
+### Interactive mode (REPL)
+
+`utd . repl` opens a prompt for one repo. Type the same commands as after `utd REPO` (`ls`, `board`, `next`,
+`new …`, `pull`, `save`, `TKT-101 done`, `TKT-101 comment -m …`, …); the index stays open between commands, so
+they are quick, and an error never ends the session. `help` lists the commands, `use REPO` switches repo,
+`exit` / `quit` / Ctrl-D leaves. History is kept in `repl_history` in the user data dir.
+
+![REPL with Tab completion](docs/screenshots/cli-repl.png)
+
+Tab completes (one Tab lists the options when there are several):
+- commands and ticket ids at the start of a line, repo names after `use`;
+- per command: its flags, the values for `--status` / `--priority` / `-p` / `-s`, existing tags after `-t`, assignees after `--assignee` / `-a`;
+- after a ticket id: the actions (`edit`, `comment`, `status`, `start`, …), values for `status` and `priority`, other ticket ids after `blocked` / `block-by` / `remove …` (never the ticket itself or ones already given), file names after `attach` / `-f` / `--attach`, and that ticket's attachments (numbers and names) after `open` / `detach`.
+
+Completion needs Python's `readline` (Linux and macOS have it; on Windows the prompt works without Tab). `serve` is not available inside the REPL; run it from the shell.
 
 ## Shell shortcut: `utd`
 
