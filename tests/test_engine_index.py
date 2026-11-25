@@ -206,3 +206,33 @@ def test_migrate_duplicates_and_conflicts(repo, make_engine):
     assert not (repo / ".todo/tasks/D-1.json5").exists()
     assert (repo / ".todo/tasks/E-1.json5").exists()  # left for a human
     assert eng.get_task("E-1")["title"] == "nested"
+
+
+# ---- a multi-line description typed straight into the file ---------------------------------
+def test_raw_newlines_in_strings_are_tolerated(repo, make_engine):
+    p = repo / ".todo/tasks/ML-1/main.json5"
+    p.parent.mkdir(parents=True)
+    p.write_text('{\n  "id": "ML-1",\n  "title": "multi",\n  "description": "# Plan\n  line two\n\t| a | b |",\n}\n')
+    eng = make_engine()
+    eng.refresh()
+    assert eng.get_task("ML-1")["description"] == "# Plan\n  line two\n\t| a | b |"
+    assert not eng.warnings
+
+
+def test_escape_raw_newlines():
+    from engine import escape_raw_newlines as esc, loads_forgiving
+    assert esc('{"a": "x\ny"}') == '{"a": "x\\ny"}'
+    assert esc('{"a": "x\r\ny\tz"}') == '{"a": "x\\ny\\tz"}'              # CRLF -> one \n, tab escaped
+    assert esc("{'a': 'x\ny'}") == "{'a': 'x\\ny'}"                         # single quotes too
+    assert esc('{"a": "x\\ny"}') == '{"a": "x\\ny"}'                        # already escaped: untouched
+    assert esc('{"a": "q\\"\nz"}') == '{"a": "q\\"\\nz"}'                   # an escaped quote does not end the string
+    assert esc('{"a": 1}\n') == '{"a": 1}\n'                               # newlines outside strings stay
+    assert esc('{ // it\'s a comment\n"a": "x\ny" }') == '{ // it\'s a comment\n"a": "x\\ny" }'  # an apostrophe in a comment
+    assert esc('{ /* "unclosed\n */ "a": "b\nc" }') == '{ /* "unclosed\n */ "a": "b\\nc" }'
+    assert esc('{"a": "one \\\ntwo"}') == '{"a": "one \\\ntwo"}'          # backslash-newline continuation is valid
+    assert loads_forgiving('{"a": "x\ny"}') == {"a": "x\ny"}
+    assert loads_forgiving('{"a": "one \\\ntwo"}') == {"a": "one two"}
+    import pytest
+    with pytest.raises(ValueError):
+        loads_forgiving("{ nope")                                           # real errors are still errors
+

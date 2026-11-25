@@ -653,3 +653,14 @@ def test_ticket_ids_win_over_short_forms(proj, capsys):
     assert "the ticket called l" in out(capsys)
     proj("L", "d")  # case-insensitive id, then the action alias
     assert "l: to do → done" in out(capsys)
+
+
+def test_edit_repairs_a_file_with_raw_newlines(proj, capsys, monkeypatch):
+    path = proj.repo / ".todo" / "tasks" / "TKT-103" / "main.json5"
+    monkeypatch.setenv("EDITOR", "python3 -c \"import sys,re;p=sys.argv[1];t=open(p).read();"
+                                 "open(p,'w').write(re.sub(r'\\\"title\\\": \\\"Docs\\\"', '\\\"title\\\": \\\"Docs\\\", \\\"description\\\": \\\"a\\nb\\\"', t))\"")
+    proj("TKT-103", "edit")
+    text = out(capsys)
+    assert "line breaks inside strings were escaped" in text and "updated" in text
+    assert '"a\\nb"' in path.read_text()          # the file is valid JSON5 again
+    assert tasks(proj)["TKT-103"]["description"] == "a\nb"

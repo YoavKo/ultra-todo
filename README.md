@@ -313,6 +313,7 @@ Comment (one file per comment, so concurrent comments never conflict):
 ```
 
 Notes:
+- Typing a multi-line description straight into the file works too: JSON5 only allows line breaks in a string as `\n`, so a raw line break is read as one (and `utd … edit` rewrites the file with them escaped). The app always writes them escaped.
 - Hand-written JSON5 (comments, unquoted keys, trailing commas) is read fine, but when the app saves a task it rewrites the file as deterministic JSON (valid JSON5), so `//` comments in that file are lost. Extra fields you add are kept.
 - Attachments are user files committed to the repo; consider Git LFS for large ones. PNG/JPEG/GIF/WebP show inline; everything else (including SVG) is served as a download.
 - Only the comment's author (by git identity) can edit or delete it.

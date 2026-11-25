@@ -23,7 +23,8 @@ from pathlib import Path
 
 import repos
 from engine import (DESCRIPTION, PRIORITIES, STATUSES, Engine, EngineError, NotFound, SyncError,
-                    ValidationError, clean_task, fold, git_root, load_file, normalize_tag, run_git)
+                    ValidationError, clean_task, escape_raw_newlines, fold, git_root, load_file,
+                    normalize_tag, run_git)
 
 # first words that are not a REPO (handled by app.main)
 COMMANDS = ("ls", "open", "forget")
@@ -536,6 +537,11 @@ def cmd_edit(engine: Engine, tid: str, p: str) -> None:
         return
     try:
         task = clean_task(load_file(path), tid)
+        text = path.read_text(encoding="utf-8")
+        fixed = escape_raw_newlines(text)
+        if fixed != text:  # a multi-line description typed into the JSON: make the file valid
+            path.write_text(fixed, encoding="utf-8")
+            print(f"{tid}: line breaks inside strings were escaped (\\n) so the file is valid JSON5")
         if load_file(path).get("id") not in (None, tid):
             raise ValidationError(f"the id must stay {tid}")
         engine.refresh()

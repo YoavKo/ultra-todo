@@ -154,9 +154,69 @@ def dump_file(path: Path, data: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def escape_raw_newlines(text: str) -> str:
+    """Escape line breaks and tabs that sit inside string literals (`\\n`, `\\t`). JSON5 only allows
+    them escaped, but they are what you get by typing a multi-line description straight into
+    the file. Comments and everything outside strings are left alone."""
+    out: list[str] = []
+    i, n, quote = 0, len(text), ""
+    while i < n:
+        ch = text[i]
+        if quote:
+            if ch == "\\" and i + 1 < n:  # an escape pair; backslash + CRLF is a valid continuation
+                step = 3 if text.startswith("\r\n", i + 1) else 2
+                out.append(text[i:i + step])
+                i += step
+                continue
+            if ch == quote:
+                quote = ""
+            elif ch == "\n":
+                out.append("\\n")
+                i += 1
+                continue
+            elif ch == "\r":
+                i += 1
+                continue
+            elif ch == "\t":
+                out.append("\\t")
+                i += 1
+                continue
+        elif ch in "\"'":
+            quote = ch
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            out.append(text[i:j])
+            i = j
+            continue
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            out.append(text[i:j])
+            i = j
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def loads_forgiving(text: str) -> Any:
+    """json5.loads, retrying with raw newlines inside strings escaped; the first error is
+    reported if that does not help."""
+    try:
+        return json5.loads(text)
+    except ValueError as first:
+        fixed = escape_raw_newlines(text)
+        if fixed != text:
+            try:
+                return json5.loads(fixed)
+            except ValueError:
+                pass
+        raise first
+
+
 def load_file(path: Path) -> dict[str, Any]:
-    with open(path, encoding="utf-8") as f:
-        data = json5.load(f)
+    data = loads_forgiving(Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValidationError(f"{path.name}: expected an object")
     return data
