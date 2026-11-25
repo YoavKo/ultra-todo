@@ -166,6 +166,26 @@ Details:
 - Per-command help: `utd . ls -h`, `board -h`, `new -h`, `next -h`, `pull -h`, `save -h`, `utd . TKT-1 -h`.
 - Breaking change: `utd` alone and `utd PATH` used to serve a repo; that is now `utd . serve` / `utd PATH serve` (`utd open NAME` and `ultra-todo --target PATH` are unchanged).
 
+### Short forms
+
+Every command has a short form, in the one-shot form (`utd . l`, `utd . 101 d`) and in the REPL. A real ticket id always
+wins over a short form (a ticket called `d` still opens; inside it, write `done`).
+
+| Repo level | | On a ticket | |
+|---|---|---|---|
+| `l`, `list` | `ls` | `e` | `edit` |
+| `b` | `board` | `c` | `comment` |
+| `n` | `next` | `st` | `status` |
+| `i` | `info` | `d` | `done` |
+| `a`, `add` | `new` | `ro` | `reopen` |
+| `pl` | `pull` | `pr` | `priority` |
+| `sv` | `save` | `o` | `open` |
+| `h`, `?` (REPL) | `help` | `at`, `dt` | `attach`, `detach` |
+| `q` (REPL) | `quit` (also `exit`, Ctrl-D) | `bl`, `bb` | `blocked`, `block-by` |
+| `..` (REPL) | `cd ..` | `t`, `as`, `tg`, `dp`, `del` | `title`, `assign`, `tag`, `deps`, `delete` |
+
+The flags already had short forms (`-s`, `-p`, `-c`, `-e`, `-o`, `-a`, `-d`, `-b`, `-bb`, `-rb`, `-rbb`, `-t`, `-q`, `-r`).
+
 ### Interactive mode (REPL)
 
 `utd . repl` — or just `utd` when you are inside a repo that has tickets — opens a prompt for one repo. The prompt
@@ -176,7 +196,7 @@ an error never ends the session.
 - `cd TKT-104` makes a ticket **current**: the prompt becomes `my-repo/TKT-104> ` and its actions need no id
   (`done`, `comment -m hi`, `tag +ui`, `open 2`, `deps`, `show`). `cd` or `cd ..` goes back; another ticket's id
   still works while one is current; if the ticket is deleted the prompt returns to the repo by itself.
-- `show [ID]` shows the current (or the given) ticket, `use REPO` switches repo, `help` lists everything.
+- `show [ID]` shows the current (or the given) ticket, `use REPO` switches repo, `h` / `help` / `?` lists everything.
 - `q`, `quit`, `exit` or Ctrl-D leaves. History is kept in `repl_history` in the user data dir.
 
 ![REPL with Tab completion](docs/screenshots/cli-repl.png)

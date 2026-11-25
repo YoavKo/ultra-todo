@@ -28,7 +28,7 @@ def test_completes_commands_and_ticket_ids(eng):
     assert comp(eng, "ne") == ["new", "next"]
     assert comp(eng, "") == sorted(repl.COMMANDS + ["ABC-7", "TKT-101", "TKT-102"])
     assert comp(eng, "TKT") == ["TKT-101", "TKT-102"]
-    assert comp(eng, "h") == ["help"] and comp(eng, "ex") == ["exit"]
+    assert comp(eng, "h") == ["h", "help"] and comp(eng, "ex") == ["exit"]
 
 
 def test_completes_flags_and_values(eng):
@@ -280,3 +280,46 @@ def test_utd_alone_opens_the_repl_inside_a_repo(repo, monkeypatch, capsys, tmp_p
     with pytest.raises(SystemExit):
         app.main([])
     assert not called
+
+
+def test_help_aliases_h_and_question_mark(psession):
+    shown, r = psession("h", "help", "?")
+    assert r.out.count("commands (type them without the repo name") == 3
+    assert "short forms" in r.out and "l list=ls" in r.out and "d=done" in r.out
+
+
+def test_short_forms_in_the_repl(psession):
+    shown, r = psession("l --ids", "n --ids", "i --json", "a 'Added short' -p h", "b --md", "i",
+                        "cd 101", "d", "st doing", "pr low", "t New name", "tg +x", "dp", "..", "q")
+    out = r.out
+    assert out.startswith("TKT-101\nTKT-102\n")                   # l = ls
+    assert "created TKT-103  Added short" in out                  # a = new
+    assert "## To do" in out and "## In progress" in out         # b = board (--md)
+    assert "TKT-101: to do → done" in out                         # d = done on the current ticket
+    assert "TKT-101: done → in progress" in out                   # st doing
+    assert "priority high → low" in out and "title → New name" in out and "tags → #x" in out
+    assert "not blocked by anything" in out                       # dp = deps
+    assert shown[-2:] == ["proj/TKT-101> ", "proj> "]             # .. = cd ..
+
+
+def test_a_ticket_id_beats_a_short_form(repo, db_path, capsys, monkeypatch):
+    write_task(repo, "d", title="A ticket named d")
+    write_task(repo, "TKT-1", title="other")
+    commit_all(repo)
+    monkeypatch.setenv("COLUMNS", "100")
+    shown, r = prompts_session(repo, db_path, ["d", "cd d", "d", "done", "TKT-1 d", "q"], capsys)
+    assert r.out.count("A ticket named d") == 2                   # `d` shows the ticket, even inside it
+    assert "d: to do → done" in r.out                             # `done` is the unambiguous action
+    assert "TKT-1: to do → done" in r.out                         # on another ticket `d` is the action
+
+
+def test_completion_understands_short_forms(eng):
+    def c(line, current=None):
+        words = line.split(" ")
+        return repl.complete(eng, words[:-1], words[-1], current=current)
+    assert c("l --st") == ["--status"] and "--csv" in c("l --c")
+    assert c("TKT-101 st ") == ["blocked", "doing", "done", "todo"]
+    assert c("TKT-101 pr ") == ["high", "low", "medium"]
+    assert c("TKT-102 bb ") == ["ABC-7", "TKT-101"]
+    assert c("st ", current="TKT-101") == ["blocked", "doing", "done", "todo"]
+    assert c("tg +", current="TKT-101") == ["+auth", "+backend", "+ui"]

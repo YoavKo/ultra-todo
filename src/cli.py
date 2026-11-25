@@ -850,6 +850,8 @@ def cmd_field(engine: Engine, tid: str, action: str, rest: list[str], p: str) ->
 
 
 def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
+    if argv and argv[0] in TICKET_ALIASES:
+        argv = [TICKET_ALIASES[argv[0]], *argv[1:]]
     if argv and argv[0] in RAW_ACTIONS:
         return cmd_field(engine, find_ticket(engine, spec), argv[0], argv[1:], p)
     ap = argparse.ArgumentParser(
@@ -1125,8 +1127,26 @@ COMMAND_FUNCS = {"info": "cmd_info", "ls": "cmd_ls", "board": "cmd_board", "new"
                  "next": "cmd_next", "pull": "cmd_pull", "save": "cmd_save", "migrate": "cmd_migrate"}
 
 
+# Short forms. A real ticket id always wins over an alias (a ticket called "d" still opens).
+REPO_ALIASES = {"l": "ls", "list": "ls", "b": "board", "n": "next", "i": "info", "a": "new", "add": "new",
+                "pl": "pull", "sv": "save"}
+TICKET_ALIASES = {"e": "edit", "c": "comment", "st": "status", "d": "done", "ro": "reopen",
+                  "pr": "priority", "at": "attach", "dt": "detach", "o": "open", "bl": "blocked",
+                  "bb": "block-by", "t": "title", "as": "assign", "tg": "tag", "dp": "deps", "del": "delete"}
+
+
+def ticket_exists(engine: Engine, word: str) -> bool:
+    return any(i.lower() == word.lower() for i in ticket_ids_of(engine))
+
+
+def ticket_ids_of(engine: Engine) -> list[str]:
+    return [r[0] for r in engine.db.execute("SELECT id FROM tasks WHERE project_path=?", (engine.project,))]
+
+
 def dispatch(engine: Engine, rest: list[str], p: str) -> None:
     """Run one command given as the words after REPL: [ACTION ...] (no action = info)."""
+    if rest and rest[0] in REPO_ALIASES and not ticket_exists(engine, rest[0]):
+        rest = [REPO_ALIASES[rest[0]], *rest[1:]]
     action = rest[0] if rest else None
     if action is None or action.startswith("-"):
         cmd_info(engine, rest, p)

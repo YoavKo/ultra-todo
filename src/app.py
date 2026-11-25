@@ -456,6 +456,7 @@ def commands_help() -> str:
             (f"{p} forget NAME|NUMBER,...", "remove repos from the list (files untouched)")]
     width = max(len(c) for c, _ in rows)
     return ("commands:\n" + "\n".join(f"  • {c:<{width}}  {d}" for c, d in rows)
+            + "\n\nshort forms: l=ls b=board n=next i=info a=new pl=pull sv=save; on a ticket: e=edit c=comment\n  st=status d=done ro=reopen pr=priority o=open at=attach dt=detach bl=blocked bb=block-by t=title\n  as=assign tg=tag dp=deps del=delete"
             + ("\n\nutd with no arguments, inside a repo that has tickets, opens the repl." if utd else "")
             + f"\n\nREPO is . (the current repo), a path, or a known repo's name or {p} ls number."
             + f"\nTab completes names and ticket ids; {p} REPO ls -h, board -h, ID -h for details.")

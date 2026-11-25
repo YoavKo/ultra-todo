@@ -612,3 +612,44 @@ def test_export_csv_and_markdown(proj, capsys):
     assert "- **TKT-102** Settings page — ● medium @bob #ui — blocked by TKT-101" in board
     with pytest.raises(SystemExit):
         proj("ls", "--csv", "--json")  # one format at a time
+
+
+def test_short_forms_on_the_command_line(proj, capsys):
+    proj("l", "--ids")
+    assert out(capsys).split() == ["TKT-101", "TKT-102", "TKT-103"]
+    proj("list", "--ids", "--status", "done")
+    assert out(capsys).split() == ["TKT-103"]
+    proj("b", "--md")
+    assert "## In progress (1)" in out(capsys)
+    proj("n", "--json")
+    assert [t["id"] for t in json.loads(out(capsys))] == ["TKT-101"]
+    proj("add", "From alias")
+    assert "created TKT-104" in out(capsys)
+    proj("TKT-101", "d")
+    assert "→ done" in out(capsys)
+    proj("TKT-101", "ro")
+    assert "→ to do" in out(capsys)
+    proj("TKT-101", "st", "doing")
+    proj("101", "pr", "low")
+    proj("101", "t", "A", "title")
+    proj("101", "as", "carol")
+    proj("101", "tg", "+z")
+    out(capsys)
+    t = tasks(proj)["TKT-101"]
+    assert (t["status"], t["priority"], t["title"], t["assignee"], t["tags"][-1]) == (
+        "in_progress", "low", "A title", "carol", "z")
+    proj("102", "bb", "103")
+    proj("102", "dp")
+    assert "TKT-103" in out(capsys)
+    proj("101", "c", "-m", "via c")
+    assert "commented on TKT-101" in out(capsys)
+    proj("i")
+    assert "tickets:" in out(capsys)
+
+
+def test_ticket_ids_win_over_short_forms(proj, capsys):
+    write_task(proj.repo, "l", title="the ticket called l")
+    proj("l")  # the ticket, not ls
+    assert "the ticket called l" in out(capsys)
+    proj("L", "d")  # case-insensitive id, then the action alias
+    assert "l: to do → done" in out(capsys)

@@ -18,7 +18,7 @@ import repos
 from engine import PRIORITIES, Engine, EngineError
 
 COMMANDS = ["info", "ls", "board", "next", "new", "pull", "save", "migrate", "use", "cd", "show",
-            "help", "exit", "quit", "q"]
+            "help", "h", "exit", "quit", "q"]
 TICKET_ACTIONS = ["edit", "comment", "title", "assign", "tag", "rm", "delete", "deps", "status", "start",
                   "done", "reopen", "priority", "attach", "detach", "open", "blocked", "block-by", "remove"]
 RAW_ACTIONS = ("title", "assign", "tag", "rm", "delete")
@@ -53,8 +53,12 @@ HELP = """commands (type them without the repo name; Tab completes):
                              without the ID (`done`, `comment -m hi`, `open 2`); `cd` or `cd ..` goes back
   show [ID]                  show the current (or the given) ticket
   use REPO                   switch to another repo (path, name or number)
-  help                       this text
+  help | h | ?               this text
   exit | quit | q | Ctrl-D   leave
+short forms   repo level:  l list=ls  b=board  n=next  i=info  a add=new  pl=pull  sv=save  ..=cd ..
+              on a ticket: e=edit  c=comment  st=status  d=done  ro=reopen  pr=priority  o=open
+                           at=attach  dt=detach  bl=blocked  bb=block-by  t=title  as=assign
+                           tg=tag  dp=deps  del=delete   (a real ticket id always wins over a short form)
 Any command accepts -h for its own help."""
 
 
@@ -86,11 +90,16 @@ def complete(engine: Engine, words: list[str], cur: str, registry=None, db_path=
         return sorted({o for o in options if o.startswith(cur)})
 
     ids = ticket_ids(engine)
+    lower = {i.lower() for i in ids}
     if current and current in ids:
         if not words:
             return pick(TICKET_FLAGS) if cur.startswith("-") else pick(COMMANDS + ids + TICKET_ACTIONS)
-        if words[0] in TICKET_ACTIONS or words[0].startswith("-"):
+        if words[0] in TICKET_ACTIONS or words[0] in cli.TICKET_ALIASES or words[0].startswith("-"):
             words = [current] + words
+    if words and words[0] in cli.REPO_ALIASES and words[0].lower() not in lower:
+        words = [cli.REPO_ALIASES[words[0]], *words[1:]]  # `l --st<Tab>` completes like `ls --st<Tab>`
+    if len(words) > 1 and words[0].lower() in lower and words[1] in cli.TICKET_ALIASES:
+        words = [words[0], cli.TICKET_ALIASES[words[1]], *words[2:]]
     first = words[0] if words else None
     prev = words[-1] if words else None
     if first is None:
@@ -227,10 +236,12 @@ def run_repl(path: str, p: str, db_path=None, registry=None, input_fn=None,
                 continue
             if not words:
                 continue
+            if words[0] == "..":
+                words = ["cd", ".."]
             cmd = words[0]
             if cmd in ("exit", "quit", "q"):
                 break
-            if cmd in ("help", "?"):
+            if cmd in ("help", "h", "?"):
                 print(HELP)
                 continue
             if cmd == "serve":
@@ -269,7 +280,8 @@ def run_repl(path: str, p: str, db_path=None, registry=None, input_fn=None,
                         print("no ticket selected: cd TKT-101, or show TKT-101", file=sys.stderr)
                         continue
                     words = [tid, *args]
-                elif current and (cmd in TICKET_ACTIONS or cmd.startswith("-")):
+                elif current and (cmd in TICKET_ACTIONS or cmd in cli.TICKET_ALIASES or cmd.startswith("-")) \
+                        and not cli.ticket_exists(engine, cmd):
                     words = [current, *words]  # an action on the current ticket
                 cli.dispatch(engine, words, p)
             except SystemExit as e:  # fail() and argparse exit; the prompt carries on

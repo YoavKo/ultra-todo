@@ -52,23 +52,23 @@ _utd() {
         COMPREPLY=($(compgen -W "ls board next new pull save migrate repl serve $(ids)" -- "$cur")); return
     fi
     case "$second" in
-        ls) COMPREPLY=($(compgen -W "$filter_flags --sort -r --reverse --json --csv --md" -- "$cur")) ;;
-        board) COMPREPLY=($(compgen -W "$filter_flags --md" -- "$cur")) ;;
-        next) COMPREPLY=($(compgen -W "$filter_flags -n --json" -- "$cur")) ;;
-        new) COMPREPLY=($(compgen -W "-p --priority -a --assignee -t --tag -d --description --status --id --attach -h" -- "$cur")) ;;
+        ls|l|list) COMPREPLY=($(compgen -W "$filter_flags --sort -r --reverse --json --csv --md" -- "$cur")) ;;
+        board|b) COMPREPLY=($(compgen -W "$filter_flags --md" -- "$cur")) ;;
+        next|n) COMPREPLY=($(compgen -W "$filter_flags -n --json" -- "$cur")) ;;
+        new|a|add) COMPREPLY=($(compgen -W "-p --priority -a --assignee -t --tag -d --description --status --id --attach -h" -- "$cur")) ;;
         repl) COMPREPLY=($(compgen -W "-h" -- "$cur")) ;;
         migrate) COMPREPLY=($(compgen -W "-h" -- "$cur")) ;;
-        pull) COMPREPLY=($(compgen -W "--rebase -h" -- "$cur")) ;;
-        save) COMPREPLY=($(compgen -W "-m --message --set-upstream -h" -- "$cur")) ;;
+        pull|pl) COMPREPLY=($(compgen -W "--rebase -h" -- "$cur")) ;;
+        save|sv) COMPREPLY=($(compgen -W "-m --message --set-upstream -h" -- "$cur")) ;;
         serve) COMPREPLY=($(compgen -W "$serve_flags" -- "$cur")) ;;
         *)  # utd REPO ID ...
             case "$prev" in
-                status) COMPREPLY=($(compgen -W "$statuses" -- "$cur")); return ;;
-                priority) COMPREPLY=($(compgen -W "$prios" -- "$cur")); return ;;
-                blocked|block-by|-b|-bb|-rb|-rbb|--blocked|--block-by|--remove-blocked|--remove-block-by)
+                status|st) COMPREPLY=($(compgen -W "$statuses" -- "$cur")); return ;;
+                priority|pr) COMPREPLY=($(compgen -W "$prios" -- "$cur")); return ;;
+                blocked|block-by|bl|bb|-b|-bb|-rb|-rbb|--blocked|--block-by|--remove-blocked|--remove-block-by)
                     COMPREPLY=($(compgen -W "$(ids)" -- "$cur")); return ;;
                 remove) COMPREPLY=($(compgen -W "blocked block-by" -- "$cur")); return ;;
-                attach|--attach|-f|--file) compopt -o filenames 2>/dev/null; COMPREPLY=($(compgen -f -- "$cur")); return ;;
+                attach|at|--attach|-f|--file) compopt -o filenames 2>/dev/null; COMPREPLY=($(compgen -f -- "$cur")); return ;;
             esac
             if [ "$COMP_CWORD" -eq 3 ] && [[ "$cur" != -* ]]; then
                 COMPREPLY=($(compgen -W "edit comment title assign tag rm deps status start done reopen priority attach detach open blocked block-by remove" -- "$cur"))
