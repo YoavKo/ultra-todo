@@ -73,7 +73,7 @@ URLs that become links); a line break in the text is a line break on the page, a
 - **Attachments**: refer to an attached file by its name: `![screenshot](shot.png)` shows the image,
   `[the log](trace.log)` links to the file (in a comment, the comment's own files; in the description, the
   description's files).
-- **Diagrams**: a fenced block tagged `mermaid` is drawn as a [Mermaid](https://mermaid.js.org) diagram (flowcharts,
+- **Diagrams**: a fenced block tagged `mermaid` (three backticks and the word `mermaid` on a line of their own before the diagram, three backticks after it; the editors remind you) is drawn as a [Mermaid](https://mermaid.js.org) diagram (flowcharts,
   sequence, state, class, ER, Gantt, pie, ...), in descriptions, comments and the Preview. It follows the light/dark
   theme. A diagram that does not parse stays as text, marked in red, so you can fix it.
 

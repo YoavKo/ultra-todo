@@ -38,7 +38,7 @@
 {% macro open_btn(task, cid, a) %}{% if can_open %}<button type="button" class="link open-file" data-open-attachment="{{ url_for('open_attachment', task_id=task.id, cid=cid, name=a.name) }}" title="{{ _('Open in the default application') }}">{{ _('Open') }}</button>{% endif %}{% endmacro %}
 
 {% macro md_tools(task_id=none, owner=none) %}
-  <span class="md-tools"><small class="muted">{{ _('Markdown is supported') }}</small>
+  <span class="md-tools"><small class="muted">{{ _('Markdown is supported. Diagrams go in a fenced block that starts with ```mermaid') }}</small>
     <button type="button" class="link" data-md-toggle {% if task_id %}data-task="{{ task_id }}" data-owner="{{ owner }}"{% endif %}>{{ _('Preview') }}</button></span>
 {% endmacro %}
 
