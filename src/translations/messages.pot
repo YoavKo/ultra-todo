@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-25 01:59+0200\n"
+"POT-Creation-Date: 2026-11-25 02:36+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -102,6 +102,9 @@ msgstr ""
 
 #, python-format
 msgid "Task %(id)s deleted."
+msgstr ""
+
+msgid "Description saved."
 msgstr ""
 
 msgid ""
@@ -223,6 +226,12 @@ msgstr ""
 msgid "Delete this? This cannot be undone."
 msgstr ""
 
+msgid "Preview"
+msgstr ""
+
+msgid "Write"
+msgstr ""
+
 msgid "Error"
 msgstr ""
 
@@ -268,6 +277,12 @@ msgstr ""
 msgid "Open"
 msgstr ""
 
+msgid "Markdown is supported"
+msgstr ""
+
+msgid "Remove"
+msgstr ""
+
 #, python-format
 msgid "Waiting on %(num)d open task"
 msgid_plural "Waiting on %(num)d open tasks"
@@ -289,9 +304,6 @@ msgstr ""
 msgid "Auto-detect"
 msgstr ""
 
-msgid "Remove"
-msgstr ""
-
 msgid "Add tag, press Enter"
 msgstr ""
 
@@ -310,6 +322,12 @@ msgstr ""
 msgid "Save"
 msgstr ""
 
+msgid "Edit"
+msgstr ""
+
+msgid "No description yet."
+msgstr ""
+
 msgid "Delete task"
 msgstr ""
 
@@ -323,9 +341,6 @@ msgid "Comment"
 msgstr ""
 
 msgid "edited"
-msgstr ""
-
-msgid "Edit"
 msgstr ""
 
 msgid "Delete"

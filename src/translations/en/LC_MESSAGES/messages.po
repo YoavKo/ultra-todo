@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ultra-todo 0.1.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-25 01:59+0200\n"
+"POT-Creation-Date: 2026-11-25 02:36+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -104,6 +104,9 @@ msgstr ""
 #, python-format
 msgid "Task %(id)s deleted."
 msgstr ""
+
+msgid "Description saved."
+msgstr "Description saved."
 
 msgid ""
 "Opening files is only available when the server runs on this computer "
@@ -224,6 +227,12 @@ msgstr ""
 msgid "Delete this? This cannot be undone."
 msgstr ""
 
+msgid "Preview"
+msgstr "Preview"
+
+msgid "Write"
+msgstr "Write"
+
 msgid "Error"
 msgstr ""
 
@@ -269,6 +278,12 @@ msgstr ""
 msgid "Open"
 msgstr ""
 
+msgid "Markdown is supported"
+msgstr "Markdown is supported"
+
+msgid "Remove"
+msgstr ""
+
 #, python-format
 msgid "Waiting on %(num)d open task"
 msgid_plural "Waiting on %(num)d open tasks"
@@ -290,9 +305,6 @@ msgstr ""
 msgid "Auto-detect"
 msgstr ""
 
-msgid "Remove"
-msgstr ""
-
 msgid "Add tag, press Enter"
 msgstr ""
 
@@ -311,6 +323,12 @@ msgstr ""
 msgid "Save"
 msgstr ""
 
+msgid "Edit"
+msgstr ""
+
+msgid "No description yet."
+msgstr "No description yet."
+
 msgid "Delete task"
 msgstr ""
 
@@ -324,9 +342,6 @@ msgid "Comment"
 msgstr ""
 
 msgid "edited"
-msgstr ""
-
-msgid "Edit"
 msgstr ""
 
 msgid "Delete"

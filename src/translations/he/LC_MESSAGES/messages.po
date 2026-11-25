@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ultra-todo 0.1.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-25 01:59+0200\n"
+"POT-Creation-Date: 2026-11-25 02:36+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: he\n"
@@ -109,11 +109,13 @@ msgstr "התלות הוסרה."
 msgid "Task %(id)s deleted."
 msgstr "המשימה %(id)s נמחקה."
 
+msgid "Description saved."
+msgstr "תיאור נשמר."
+
 msgid ""
 "Opening files is only available when the server runs on this computer "
 "(localhost)."
-msgstr ""
-"פתיחת קבצים זמינה רק כשהשרת רץ במחשב הזה (localhost)."
+msgstr "פתיחת קבצים זמינה רק כשהשרת רץ במחשב הזה (localhost)."
 
 #, python-format
 msgid "Opening %(name)s…"
@@ -229,6 +231,12 @@ msgstr "עובד…"
 msgid "Delete this? This cannot be undone."
 msgstr "למחוק? לא ניתן לבטל פעולה זו."
 
+msgid "Preview"
+msgstr "תצוגה מקדימה"
+
+msgid "Write"
+msgstr "כתיבה"
+
 msgid "Error"
 msgstr "שגיאה"
 
@@ -274,6 +282,12 @@ msgstr "פתח באפליקציית ברירת המחדל"
 msgid "Open"
 msgstr "פתח"
 
+msgid "Markdown is supported"
+msgstr "אפשר להשתמש ב-Markdown"
+
+msgid "Remove"
+msgstr "הסרה"
+
 #, python-format
 msgid "Waiting on %(num)d open task"
 msgid_plural "Waiting on %(num)d open tasks"
@@ -295,9 +309,6 @@ msgstr "שפת התוכן"
 msgid "Auto-detect"
 msgstr "זיהוי אוטומטי"
 
-msgid "Remove"
-msgstr "הסרה"
-
 msgid "Add tag, press Enter"
 msgstr "הוסיפו תגית ולחצו Enter"
 
@@ -316,6 +327,12 @@ msgstr "יצירה"
 msgid "Save"
 msgstr "שמירה"
 
+msgid "Edit"
+msgstr "עריכה"
+
+msgid "No description yet."
+msgstr "אין תיאור עדיין."
+
 msgid "Delete task"
 msgstr "מחיקת משימה"
 
@@ -330,9 +347,6 @@ msgstr "הגבה"
 
 msgid "edited"
 msgstr "נערך"
-
-msgid "Edit"
-msgstr "עריכה"
 
 msgid "Delete"
 msgstr "מחיקה"

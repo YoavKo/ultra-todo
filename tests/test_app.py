@@ -59,7 +59,7 @@ def test_comment_with_attachment(client):
                    "files": [(io.BytesIO(b"\x89PNG"), "shot.png"), (io.BytesIO(b"<svg/>"), "x.svg")]})
     assert r.status_code == 302
     html = client.get("/task/TKT-101").get_data(as_text=True)
-    assert 'href="https://example.com"' in html and "<br>" in html
+    assert 'href="https://example.com"' in html and "<br />" in html  # bare URLs link, newlines break
     cid = client.eng.get_comments("TKT-101")[0]["id"]
     png = client.get(f"/task/TKT-101/attachment/{cid}/shot.png")
     assert png.mimetype == "image/png" and "attachment" not in png.headers.get("Content-Disposition", "")
@@ -219,7 +219,8 @@ def local_client(repo, make_engine, monkeypatch):
 def test_open_button_and_endpoint(local_client):
     cl = local_client
     html = cl.get("/task/TKT-101").get_data(as_text=True)
-    assert html.count("data-open-attachment") == 2  # the description's file and the comment's
+    # the description's file (in its view and in its edit form) and the comment's
+    assert html.count("data-open-attachment") == 3
     assert "/task/TKT-101/open-attachment/description/log.txt" in html
     r = cl.post("/task/TKT-101/open-attachment/description/log.txt", headers={"X-CSRF-Token": cl.token})
     assert r.status_code == 200 and "log.txt" in r.get_json()["message"]
@@ -336,3 +337,97 @@ def test_run_returns_open_and_serve_arguments(repo, db_path):
         "--target", str(repo), "--browser", "--port", "9"]
     assert cli.run([str(repo), "serve", "--port", "9"], "utd", db_path=db_path) == [
         "--target", str(repo), "--port", "9"]
+
+
+# ---- Markdown, and editing the description in place ------------------------------------------
+@pytest.fixture
+def md_client(client):
+    client.eng.save_task({"id": "TKT-101", "description": "# Plan\n\n- [x] one\n- two\n\n**bold** and `code`\n\nשלום **עולם**"})
+    return client
+
+
+def test_description_is_rendered_as_markdown_with_an_edit_button(md_client):
+    html = md_client.get("/task/TKT-101").get_data(as_text=True)
+    view = html[html.index('id="description"'):]
+    assert "<h1 dir=\"auto\">Plan</h1>" in view and "<strong>bold</strong>" in view
+    assert "<code>code</code>" in view and 'type="checkbox"' in view and "<strong>עולם</strong>" in view
+    assert "data-desc-edit" in view and "data-desc-cancel" in view
+    assert "<textarea name=\"description\"" in view and "# Plan" in view   # the source, in the (hidden) editor
+    assert 'class="stack desc-edit" hidden' in view.replace("\n", " ").replace("  ", " ")  # starts in view mode
+
+
+def test_saving_the_description_updates_only_the_description(md_client):
+    r = post(md_client, "/task/TKT-101/description", data={"csrf_token": md_client.token, "description": "new *text*"})
+    assert r.status_code == 302 and r.headers["Location"].endswith("/task/TKT-101#description")
+    t = md_client.eng.get_task("TKT-101")
+    assert t["description"] == "new *text*" and t["title"] == "שלום עולם" and t["tags"] == ["ui", "דחוף"]
+    assert "<em>text</em>" in md_client.get("/task/TKT-101").get_data(as_text=True)
+    post(md_client, "/task/TKT-101/description", data={"csrf_token": md_client.token, "description": ""})
+    assert md_client.eng.get_task("TKT-101")["description"] == ""
+    assert "No description yet." in md_client.get("/task/TKT-101").get_data(as_text=True)
+    assert md_client.post("/task/TKT-101/description", data={"description": "x"}).status_code == 403  # no CSRF token
+
+
+def test_the_main_form_no_longer_touches_the_description(md_client):
+    before = md_client.eng.get_task("TKT-101")["description"]
+    html = md_client.get("/task/TKT-101").get_data(as_text=True)
+    main_form = html[html.index('id="task-form"'): html.index('id="description"')]
+    assert 'name="description"' not in main_form      # the textarea lives in the description section
+    post(md_client, "/task/TKT-101", data={"csrf_token": md_client.token, "title": "Renamed", "status": "done"})
+    t = md_client.eng.get_task("TKT-101")
+    assert t["title"] == "Renamed" and t["status"] == "done" and t["description"] == before  # not wiped
+
+
+def test_new_task_form_still_has_a_description_box(client):
+    html = client.get("/task/new").get_data(as_text=True)
+    assert 'name="description"' in html and "Markdown is supported" in html
+    r = post(client, "/task", data={"csrf_token": client.token, "title": "n", "status": "todo", "id": "MD-1",
+                                    "description": "**hi**"})
+    assert r.status_code == 302 and client.eng.get_task("MD-1")["description"] == "**hi**"
+
+
+def test_description_attachments_through_the_description_form(md_client):
+    import io
+    post(md_client, "/task/TKT-101/description", content_type="multipart/form-data",
+         data={"csrf_token": md_client.token, "description": "see ![shot](shot.png) and [log](log.txt)",
+               "files": [(io.BytesIO(b"\x89PNG"), "shot.png"), (io.BytesIO(b"boom"), "log.txt")]})
+    html = md_client.get("/task/TKT-101").get_data(as_text=True)
+    assert '<img src="/task/TKT-101/attachment/description/shot.png" alt="shot"' in html   # file names resolve
+    assert '<a href="/task/TKT-101/attachment/description/log.txt">log</a>' in html
+    post(md_client, "/task/TKT-101/description", content_type="multipart/form-data",
+         data={"csrf_token": md_client.token, "description": "x", "remove": "log.txt"})
+    assert [a["name"] for a in md_client.eng.get_task("TKT-101")["attachments"]] == ["shot.png"]
+
+
+def test_comments_render_markdown_and_never_raw_html(client):
+    body = ("**bold** <script>alert(1)</script> <img src=x onerror=alert(2)> [bad](javascript:alert(3)) "
+            "![x](data:text/html;base64,AAAA)\n\n> quote\n\n```\n<b>code</b>\n```")
+    post(client, "/task/TKT-101/comment", data={"body": body, "csrf_token": client.token})
+    html = client.get("/task/TKT-101").get_data(as_text=True)
+    comment = html[html.index('class="comment"'):]
+    assert "<strong>bold</strong>" in comment and "<blockquote" in comment
+    assert "&lt;script&gt;" in comment and "<script>alert" not in comment
+    assert "onerror=alert(2)" not in comment.replace("&lt;img src=x onerror=alert(2)&gt;", "")  # escaped, not an attribute
+    assert 'href="javascript:' not in comment and "data:text/html" not in comment.replace("![x](data:text/html;base64,AAAA)", "")
+    assert "&lt;b&gt;code&lt;/b&gt;" in comment
+
+
+def test_comment_attachment_names_resolve_in_that_comment(client):
+    import io
+    post(client, "/task/TKT-101/comment", content_type="multipart/form-data",
+         data={"body": "![pic](pic.png)", "csrf_token": client.token, "files": [(io.BytesIO(b"\x89PNG"), "pic.png")]})
+    cid = client.eng.get_comments("TKT-101")[0]["id"]
+    assert f'src="/task/TKT-101/attachment/{cid}/pic.png"' in client.get("/task/TKT-101").get_data(as_text=True)
+
+
+def test_markdown_preview_endpoint(md_client):
+    h = {"X-CSRF-Token": md_client.token}
+    r = md_client.post("/api/markdown", json={"text": "**x** <i>y</i>"}, headers=h)
+    assert r.status_code == 200 and r.get_json()["html"].strip() == '<p dir="auto"><strong>x</strong> &lt;i&gt;y&lt;/i&gt;</p>'
+    md_client.eng.save_task({"id": "TKT-101"}, files=[("a.png", b"\x89PNG")])
+    r = md_client.post("/api/markdown", json={"text": "![a](a.png)", "task_id": "TKT-101", "owner": "description"}, headers=h)
+    assert "/task/TKT-101/attachment/description/a.png" in r.get_json()["html"]
+    assert md_client.post("/api/markdown", json={"text": "x"}).status_code == 403            # CSRF
+    assert md_client.post("/api/markdown", json={"text": "x", "task_id": "NOPE", "owner": "description"},
+                          headers=h).status_code == 200                                      # unknown ticket: no resolving
+    assert md_client.post("/api/markdown", json={}, headers=h).get_json()["html"] == ""

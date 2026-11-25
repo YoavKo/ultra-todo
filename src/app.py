@@ -7,22 +7,21 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import re
 import secrets
 import socket
 import sys
 from datetime import datetime
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from flask import (Flask, abort, flash, jsonify, redirect, render_template, request,
                    send_file, url_for)
 from flask_babel import format_datetime, get_locale, gettext as _, ngettext
-from markupsafe import Markup, escape
 
 from engine import (PRIORITIES, STATUSES, CycleError, Engine, EngineError, GitError, NotFound,
                     SyncError, ValidationError)
 from i18n import COOKIE, SUPPORTED, init_babel, text_dir
 import cli
+import markup
 import repos
 
 log = logging.getLogger("ultra-todo")
@@ -55,21 +54,6 @@ def sync_error_message(e: SyncError) -> str:
     }.get(e.code, e.code)
 
 
-_URL_RE = re.compile(r"(https?://[^\s<>\"']+)")
-
-
-def linkify(text: str) -> Markup:
-    """Escape, turn URLs into links and newlines into <br>."""
-    out = []
-    for i, part in enumerate(_URL_RE.split(text or "")):
-        if i % 2:
-            u = escape(part)
-            out.append(Markup(f'<a href="{u}" rel="noopener noreferrer" target="_blank" dir="ltr">{u}</a>'))
-        else:
-            out.append(escape(part))
-    return Markup("").join(out).replace("\n", Markup("<br>"))
-
-
 LOOPBACK = ('127.0.0.1', '::1', 'localhost')
 
 
@@ -81,10 +65,18 @@ def create_app(engine: Engine, default_lang: str | None = None, can_open: bool =
                       MAX_CONTENT_LENGTH=engine.max_attachment_bytes * 5 + 1024 * 1024,
                       SECRET_KEY=secrets.token_hex(32))
     init_babel(app)
-    app.jinja_env.filters["linkify"] = linkify
     # globals (unlike context vars) are visible inside imported macros
+    def md(text, task_id=None, owner=None, attachments=()):
+        """Markdown -> safe HTML. A bare file name in the text (`![](shot.png)`, `[log](log.txt)`)
+        links to that attachment of the ticket: `owner` is 'description' or a comment id."""
+        urls = {}
+        for a in attachments or ():
+            urls[a["name"]] = urls[a["file"]] = url_for("attachment", task_id=task_id, cid=owner,
+                                                          name=a["name"])
+        return markup.render(text, lambda href: urls.get(unquote(href)))
+
     app.jinja_env.globals.update(priority_label=priority_label, status_label=status_label,
-                                 PRIORITIES=PRIORITIES, STATUSES=STATUSES)
+                                 PRIORITIES=PRIORITIES, STATUSES=STATUSES, md=md)
 
     @app.template_filter("dt")
     def _dt(value):
@@ -174,7 +166,8 @@ def create_app(engine: Engine, default_lang: str | None = None, can_open: bool =
         }
 
     def form_task(form) -> dict:
-        data = {k: form.get(k, "") for k in ("title", "status", "assignee", "description")}
+        # only what the form has: the task page edits the description in its own form
+        data = {k: form.get(k, "") for k in ("title", "status", "assignee", "description") if k in form}
         if form.get("priority"):
             data["priority"] = form["priority"]
         data["tags"] = form.getlist("tags") + form.get("tags_text", "").split(",")
@@ -299,6 +292,27 @@ def create_app(engine: Engine, default_lang: str | None = None, can_open: bool =
         status = (request.get_json(silent=True) or {}).get("status") or request.form.get("status")
         task, err = engine.set_status(task_id, status)
         return jsonify({"task": task, "commit_error": err})
+
+    @app.post("/task/<task_id>/description")
+    def update_description(task_id):
+        _task, err = engine.save_task({"id": task_id, "description": request.form.get("description", "")},
+                                      files=uploads(), remove_files=request.form.getlist("remove"))
+        flash_commit(err)
+        flash(_("Description saved."), "success")
+        return redirect(url_for("task_view", task_id=task_id) + "#description")
+
+    @app.post("/api/markdown")
+    def api_markdown():
+        """Preview of a text as Markdown (the editors' Preview button)."""
+        body = request.get_json(silent=True) or {}
+        tid, owner, atts = body.get("task_id"), body.get("owner"), []
+        if tid and owner:
+            try:
+                atts = (engine.get_task(tid)["attachments"] if owner == "description" else
+                        next((c["attachments"] for c in engine.get_comments(tid) if c["id"] == owner), []))
+            except NotFound:
+                atts = []
+        return jsonify({"html": str(md(str(body.get("text") or ""), tid, owner, atts))})
 
     # ---- comments ----------------------------------------------------
     @app.post("/task/<task_id>/comment")

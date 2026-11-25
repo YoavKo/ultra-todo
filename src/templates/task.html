@@ -37,6 +37,24 @@
 
 {% macro open_btn(task, cid, a) %}{% if can_open %}<button type="button" class="link open-file" data-open-attachment="{{ url_for('open_attachment', task_id=task.id, cid=cid, name=a.name) }}" title="{{ _('Open in the default application') }}">{{ _('Open') }}</button>{% endif %}{% endmacro %}
 
+{% macro md_tools(task_id=none, owner=none) %}
+  <span class="md-tools"><small class="muted">{{ _('Markdown is supported') }}</small>
+    <button type="button" class="link" data-md-toggle {% if task_id %}data-task="{{ task_id }}" data-owner="{{ owner }}"{% endif %}>{{ _('Preview') }}</button></span>
+{% endmacro %}
+
+{% macro att_item(task, a, owner, removable=false) %}
+  {% set href = url_for('attachment', task_id=task.id, cid=owner, name=a.name) %}
+  <div class="att">
+    {% if a.mime in inline_images %}
+      <a href="{{ href }}" target="_blank" class="thumb"><img src="{{ href }}" alt="{{ a.name }}" loading="lazy"></a>
+    {% else %}
+      <a href="{{ href }}" class="file">📎 <bdi>{{ a.name }}</bdi> <small class="muted">{{ (a.size / 1024)|round(1) }} KB</small></a>
+    {% endif %}
+    <span class="att-actions">{{ open_btn(task, owner, a) }}
+      {% if removable %}<label class="check"><input type="checkbox" name="remove" value="{{ a.name }}"> {{ _('Remove') }}</label>{% endif %}</span>
+  </div>
+{% endmacro %}
+
 {% block content %}
 <div class="task-layout">
 <section class="panel">
@@ -60,7 +78,7 @@
   </section>
   {% endif %}
   <form method="post" action="{{ url_for('create_task') if is_new else url_for('update_task', task_id=task.id) }}"
-        class="stack" id="task-form" enctype="multipart/form-data" data-paste-files>
+        class="stack" id="task-form" {% if is_new %}enctype="multipart/form-data" data-paste-files{% endif %}>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if is_new %}
     <label>{{ _('ID') }} <small class="muted">({{ _('optional, generated if empty') }})</small>
@@ -115,36 +133,62 @@
       {% endfor %}
     </fieldset>
     {% endif %}
-    <label>{{ _('Description') }}
-      <textarea name="description" rows="8"
-        {% if task.lang %}lang="{{ task.lang }}" dir="{{ 'rtl' if task.lang == 'he' else 'ltr' }}"{% else %}dir="auto"{% endif %}>{{ task.description }}</textarea>
-    </label>
+    {% if is_new %}
+    <div class="md-edit">
+      <label>{{ _('Description') }}
+        <textarea name="description" rows="8" dir="auto">{{ task.description }}</textarea>
+        <div class="md preview" hidden></div>
+      </label>
+      {{ md_tools() }}
+    </div>
     <div class="desc-files">
       <span>{{ _('Attachments') }}</span>
-      {% if task.attachments %}
-      <div class="attachments">
-        {% for a in task.attachments %}
-          {% set href = url_for('attachment', task_id=task.id, cid='description', name=a.name) %}
-          <div class="att">
-            {% if a.mime in inline_images %}
-              <a href="{{ href }}" target="_blank" class="thumb"><img src="{{ href }}" alt="{{ a.name }}" loading="lazy"></a>
-            {% else %}
-              <a href="{{ href }}" class="file">📎 <bdi>{{ a.name }}</bdi> <small class="muted">{{ (a.size / 1024)|round(1) }} KB</small></a>
-            {% endif %}
-            <span class="att-actions">{{ open_btn(task, 'description', a) }}
-            <label class="check"><input type="checkbox" name="remove" value="{{ a.name }}"> {{ _('Remove') }}</label></span>
-          </div>
-        {% endfor %}
-      </div>
-      {% endif %}
       <input type="file" name="files" multiple aria-label="{{ _('Attachments') }}">
     </div>
+    {% endif %}
     <div class="row">
       <button class="btn primary">{{ _('Create') if is_new else _('Save') }}</button>
       <a class="btn ghost" href="{{ url_for('index') }}">{{ _('Cancel') }}</a>
     </div>
   </form>
   {% if not is_new %}
+    <section class="description" id="description">
+      <div class="section-head">
+        <h3>{{ _('Description') }}</h3>
+        <button type="button" class="link" data-desc-edit>{{ _('Edit') }}</button>
+      </div>
+      <div class="desc-view">
+        {% if task.description.strip() %}
+          <div class="md" dir="auto">{{ md(task.description, task.id, 'description', task.attachments) }}</div>
+        {% else %}
+          <p class="muted">{{ _('No description yet.') }}</p>
+        {% endif %}
+        {% if task.attachments %}
+          <div class="attachments">{% for a in task.attachments %}{{ att_item(task, a, 'description') }}{% endfor %}</div>
+        {% endif %}
+      </div>
+      <form method="post" action="{{ url_for('update_description', task_id=task.id) }}" enctype="multipart/form-data"
+            class="stack desc-edit" hidden data-paste-files>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="md-edit">
+          <textarea name="description" rows="10" aria-label="{{ _('Description') }}"
+            {% if task.lang %}lang="{{ task.lang }}" dir="{{ 'rtl' if task.lang == 'he' else 'ltr' }}"{% else %}dir="auto"{% endif %}>{{ task.description }}</textarea>
+          <div class="md preview" hidden></div>
+          {{ md_tools(task.id, 'description') }}
+        </div>
+        <div class="desc-files">
+          <span>{{ _('Attachments') }}</span>
+          {% if task.attachments %}
+            <div class="attachments">{% for a in task.attachments %}{{ att_item(task, a, 'description', true) }}{% endfor %}</div>
+          {% endif %}
+          <input type="file" name="files" multiple aria-label="{{ _('Attachments') }}">
+        </div>
+        <div class="row">
+          <button class="btn primary">{{ _('Save') }}</button>
+          <button type="button" class="btn ghost" data-desc-cancel>{{ _('Cancel') }}</button>
+        </div>
+      </form>
+    </section>
     <form method="post" action="{{ url_for('delete_task', task_id=task.id) }}" data-confirm>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="btn danger">{{ _('Delete task') }}</button>
@@ -158,7 +202,11 @@
   <form method="post" enctype="multipart/form-data" class="stack composer"
         action="{{ url_for('add_comment', task_id=task.id) }}" data-paste-files>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <textarea name="body" rows="3" dir="auto" placeholder="{{ _('Write a comment… (paste or drop images/files)') }}"></textarea>
+    <div class="md-edit">
+      <textarea name="body" rows="3" dir="auto" placeholder="{{ _('Write a comment… (paste or drop images/files)') }}"></textarea>
+      <div class="md preview" hidden></div>
+      {{ md_tools() }}
+    </div>
     <div class="row">
       <input type="file" name="files" multiple>
       <button class="btn primary">{{ _('Comment') }}</button>
@@ -180,7 +228,7 @@
         </form>
       {% endif %}
     </header>
-    <div class="body" dir="auto">{{ c.body|linkify }}</div>
+    <div class="body md">{{ md(c.body, task.id, c.id, c.attachments) }}</div>
     {% if c.attachments %}
     <div class="attachments">
       {% for a in c.attachments %}
@@ -198,7 +246,11 @@
     <form method="post" enctype="multipart/form-data" class="stack edit" hidden data-paste-files
           action="{{ url_for('edit_comment', task_id=task.id, cid=c.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <textarea name="body" rows="3" dir="auto">{{ c.body }}</textarea>
+      <div class="md-edit">
+        <textarea name="body" rows="3" dir="auto">{{ c.body }}</textarea>
+        <div class="md preview" hidden></div>
+        {{ md_tools(task.id, c.id) }}
+      </div>
       {% for a in c.attachments %}
         <label class="check"><input type="checkbox" name="remove" value="{{ a.name }}"> {{ _('Remove') }} <bdi>{{ a.name }}</bdi></label>
       {% endfor %}

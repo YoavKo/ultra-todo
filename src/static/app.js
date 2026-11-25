@@ -205,6 +205,39 @@
     });
   });
 
+  // ---- description: rendered view <-> text editor --------------------
+  function resetPreview(box) {
+    const ta = box.querySelector("textarea"), pv = box.querySelector(".preview"), b = box.querySelector("[data-md-toggle]");
+    pv.hidden = true; ta.hidden = false;
+    if (b) b.textContent = T.preview;
+  }
+  document.querySelectorAll(".description").forEach((sec) => {
+    const view = sec.querySelector(".desc-view"), form = sec.querySelector("form.desc-edit");
+    const editBtn = sec.querySelector("[data-desc-edit]");
+    const setEdit = (on) => {
+      view.hidden = on; form.hidden = !on; editBtn.hidden = on;
+      if (on) form.querySelector("textarea").focus();
+      else { form.reset(); resetPreview(form.querySelector(".md-edit")); }
+    };
+    editBtn.addEventListener("click", () => setEdit(true));
+    sec.querySelector("[data-desc-cancel]").addEventListener("click", () => setEdit(false));
+    form.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") setEdit(false);
+      else if ((e.ctrlKey || e.metaKey) && e.key === "Enter") form.requestSubmit();
+    });
+  });
+
+  // ---- Markdown preview toggle (description, comment composer, comment edit) --
+  document.querySelectorAll("[data-md-toggle]").forEach((b) => b.addEventListener("click", async () => {
+    const box = b.closest(".md-edit"), ta = box.querySelector("textarea"), pv = box.querySelector(".preview");
+    if (!pv.hidden) { resetPreview(box); ta.focus(); return; }
+    try {
+      const d = await api("/api/markdown", { text: ta.value, task_id: b.dataset.task, owner: b.dataset.owner });
+      pv.innerHTML = d.html;  // the server escapes raw HTML, so this is markup we produced
+      pv.dir = "auto"; pv.hidden = false; ta.hidden = true; b.textContent = T.write;
+    } catch (e) { toast(e.message, "error"); }
+  }));
+
   // ---- open an attachment in the desktop's default application -------
   document.querySelectorAll("[data-open-attachment]").forEach((b) => b.addEventListener("click", async () => {
     try { toast((await api(b.dataset.openAttachment)).message, "ok"); }

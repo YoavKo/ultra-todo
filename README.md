@@ -17,6 +17,7 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 - **Priority** – high / medium / low (default medium): coloured badge on cards, priority filter, high-priority tasks listed first
 - **Dependencies** – each task page shows what blocks it and what it blocks, with one-click × to remove a link and a picker to add one (cycles are rejected)
 - **Tags** on tasks, with filter chips (AND / OR, shareable via URL)
+- **Markdown** in ticket descriptions and comments: rendered in the web UI (headings, lists, task lists, tables, quotes, code, links, images), with an **Edit** button that turns the description into a text box (Save / Cancel) and a **Preview** toggle in every editor
 - **Attachments on the ticket** – attach images and files to a ticket's description (task form: choose, paste or drop; CLI: `utd . TKT-101 attach FILE…`), stored in the ticket's own directory; an **Open** button next to every attachment (ticket and comments) opens it in your desktop's default application
 - **Comments** per task: newest first, author and time stamped by the server, editable, with image/file attachments stored next to the task
 - **Update** button: `git pull --ff-only`, then the index is refreshed from the diff (rebase offered if the branch diverged; aborted cleanly on conflict)
@@ -34,6 +35,10 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 **List view**
 
 ![List view](docs/screenshots/list-dark.png)
+
+**A ticket with a Markdown description** – rendered, with an Edit button; comments render Markdown too
+
+![Ticket description rendered from Markdown](docs/screenshots/task-md-dark.png)
 
 **Adding a task**
 
@@ -56,6 +61,25 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 **Commands**
 
 ![Known repos and the command list](docs/screenshots/cli.png)
+
+## Markdown
+
+Descriptions and comments are Markdown (CommonMark plus tables, `~~strikethrough~~`, task lists `- [ ] item` and bare
+URLs that become links); a line break in the text is a line break on the page, as plain-text comments always were.
+
+- **Edit**: on a ticket the description is shown rendered. **Edit** switches it to a text box (the Markdown source) with
+  **Save** and **Cancel**; Save updates only the description. Ctrl/Cmd+Enter saves, Esc cancels. The comment box and
+  the comment editor have the same **Preview** / **Write** toggle.
+- **Attachments**: refer to an attached file by its name: `![screenshot](shot.png)` shows the image,
+  `[the log](trace.log)` links to the file (in a comment, the comment's own files; in the description, the
+  description's files).
+- **Hebrew and English** mix freely: every paragraph, list item, heading, quote and table cell picks its own direction;
+  code stays left-to-right.
+- **Safe by construction**: raw HTML in the text is shown as text, never run; `javascript:`, `data:` and `file:` links
+  are not linked; external links open in a new tab with `rel="noopener noreferrer"`, external images load lazily
+  without a referrer.
+- **Files and the terminal**: the Markdown source is what is stored in `main.json5` and the comment files, so the
+  files stay readable, and `utd . TKT-101` prints the source as written.
 
 ## Install and run (uv)
 
