@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ultra-todo 0.1.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-25 02:56+0200\n"
+"POT-Creation-Date: 2026-11-25 02:59+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: he\n"
@@ -70,6 +70,42 @@ msgstr "ה-push נכשל."
 
 msgid "Update failed."
 msgstr "העדכון נכשל."
+
+msgid "Headings"
+msgstr "כותרות"
+
+msgid "Emphasis"
+msgstr "הדגשה"
+
+msgid "Lists"
+msgstr "רשימות"
+
+msgid "Task lists"
+msgstr "רשימות משימות"
+
+msgid "Quotes"
+msgstr "ציטוטים"
+
+msgid "Code"
+msgstr "קוד"
+
+msgid "Links"
+msgstr "קישורים"
+
+msgid "Images and files you attached"
+msgstr "תמונות וקבצים שצירפת"
+
+msgid "Tables"
+msgstr "טבלאות"
+
+msgid "Divider"
+msgstr "קו מפריד"
+
+msgid "Line breaks and escaping"
+msgstr "שבירות שורה ותווי בריחה"
+
+msgid "Diagrams (Mermaid)"
+msgstr "תרשימים (Mermaid)"
 
 msgid "Invalid or missing CSRF token. Reload the page."
 msgstr "אסימון CSRF חסר או שגוי. טענו את הדף מחדש."
@@ -293,6 +329,9 @@ msgid ""
 "```mermaid"
 msgstr "אפשר להשתמש ב-Markdown. תרשימים נכתבים בבלוק קוד שמתחיל ב-```mermaid"
 
+msgid "Cheatsheet"
+msgstr "דף עזר"
+
 msgid "Remove"
 msgstr "הסרה"
 
@@ -361,6 +400,28 @@ msgstr "מחיקה"
 
 msgid "No comments yet."
 msgstr "אין תגובות עדיין."
+
+msgid "Markdown cheatsheet"
+msgstr "דף עזר ל-Markdown"
+
+msgid "Close"
+msgstr "סגירה"
+
+msgid "You type"
+msgstr "מה שכותבים"
+
+msgid "You get"
+msgstr "מה שמתקבל"
+
+msgid ""
+"The attached image, and a link to the attached file. Use the file name as"
+" it is listed under Attachments."
+msgstr "התמונה המצורפת, וקישור לקובץ המצורף. משתמשים בשם הקובץ כפי שהוא מופיע תחת קבצים מצורפים."
+
+msgid ""
+"Not supported: raw HTML (it is shown as text), footnotes, math and emoji "
+"codes."
+msgstr "לא נתמכים: HTML גולמי (מוצג כטקסט), הערות שוליים, נוסחאות מתמטיות וקודי אימוג'י."
 
 #~ msgid "Markdown is supported"
 #~ msgstr "אפשר להשתמש ב-Markdown"

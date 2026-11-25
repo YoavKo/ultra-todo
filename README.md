@@ -67,6 +67,26 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 Descriptions and comments are Markdown (CommonMark plus tables, `~~strikethrough~~`, task lists `- [ ] item` and bare
 URLs that become links); a line break in the text is a line break on the page, as plain-text comments always were.
 
+- **Syntax**: this is everything that works (the **Cheatsheet** button next to Preview, in every editor, shows it with the result):
+
+  | | You type |
+  |---|---|
+  | Headings | `# H1` … `###### H6`, or a line underlined with `===` / `---` |
+  | Emphasis | `**bold**` `*italic*` `***both***` `~~strikethrough~~` `` `code` `` |
+  | Lists | `- bullet` / `1. numbered` (a number sets where it starts), indent two spaces to nest |
+  | Task lists | `- [ ] to do` / `- [x] done` |
+  | Quotes | `> quote`, `> > nested` |
+  | Code | a fence of three backticks (or `~~~`) with an optional language, or four spaces of indent |
+  | Links | `[text](https://… "optional tooltip")`, `<https://…>`, bare `https://…` and `www.…`, `<me@example.com>`, `[text][ref]` with `[ref]: https://…` |
+  | Images and files | `![caption](https://…)`; or the name of an attachment: `![caption](shot.png)`, `[the log](trace.log)` |
+  | Tables | `\| a \| b \|` rows with a `\|---\|---\|` line; `:--` `:-:` `--:` align the column |
+  | Divider | `---` on its own line |
+  | Line breaks | a new line is a line break; a backslash escapes a symbol (`\*not italic\*`); `&copy;`-style entities work |
+  | Diagrams | a fence tagged `mermaid` |
+
+  **Not supported**: raw HTML (it is shown as text), footnotes, math, emoji codes such as `:smile:`, superscript, `==highlight==`, definition lists.
+
+  ![The Markdown cheatsheet](docs/screenshots/md-cheatsheet-dark.png)
 - **Edit**: on a ticket the description is shown rendered. **Edit** switches it to a text box (the Markdown source) with
   **Save** and **Cancel**; Save updates only the description. Ctrl/Cmd+Enter saves, Esc cancels. The comment box and
   the comment editor have the same **Preview** / **Write** toggle.

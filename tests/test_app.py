@@ -433,6 +433,13 @@ def test_markdown_preview_endpoint(md_client):
     assert md_client.post("/api/markdown", json={}, headers=h).get_json()["html"] == ""
 
 
+def page_without_cheatsheet(page):
+    """A page's HTML minus the cheatsheet dialog, which has a diagram example of its own."""
+    html = page if isinstance(page, str) else page.get_data(as_text=True)
+    start = html.index('<dialog id="md-help"')
+    return html[:start] + html[html.index("</dialog>", start):]
+
+
 def test_mermaid_diagrams_in_markdown(md_client):
     md_client.eng.save_task({"id": "TKT-101", "description": "```mermaid\ngraph LR\n  A --> B\n```"})
     html = md_client.get("/task/TKT-101").get_data(as_text=True)
@@ -446,8 +453,32 @@ def test_mermaid_diagrams_in_markdown(md_client):
     assert "cdn" not in html.lower() and "jsdelivr" not in html.lower()               # fully offline
     post(md_client, "/task/TKT-101/comment", data={"body": "```mermaid\nsequenceDiagram\n  A->>B: hi\n```",
                                                     "csrf_token": md_client.token})
-    assert html.count('class="mermaid"') == 1                                           # description only so far
-    assert md_client.get("/task/TKT-101").get_data(as_text=True).count('class="mermaid"') == 2  # + the comment
+    assert page_without_cheatsheet(html).count('class="mermaid"') == 1                  # description only so far
+    assert page_without_cheatsheet(md_client.get("/task/TKT-101")).count('class="mermaid"') == 2  # + the comment
     pv = md_client.post("/api/markdown", json={"text": "```mermaid\npie\n \"a\": 1\n```"},
                         headers={"X-CSRF-Token": md_client.token}).get_json()["html"]
     assert 'class="mermaid"' in pv                                                      # the Preview toggle draws it too
+
+
+def test_cheatsheet_button_and_dialog(md_client):
+    html = md_client.get("/task/TKT-101").get_data(as_text=True)
+    assert '<dialog id="md-help" class="md-help">' in html and "Markdown cheatsheet" in html
+    assert html.count("data-md-help") >= 2          # the description editor and the comment box (+ own comments)
+    dialog = html[html.index('<dialog id="md-help"'):html.index("</dialog>", html.index('<dialog id="md-help"'))]
+    import markup
+    from markupsafe import escape
+    for key, source, drawn in markup.CHEATSHEET:
+        assert str(escape(source)) in dialog                                       # what you type, escaped
+        if drawn:
+            assert str(markup.render(source)).strip() in dialog                    # what you get, from the renderer
+    assert "<strong>bold</strong>" in dialog and 'class="mermaid"' in dialog and "Not supported" in dialog
+    assert "Headings" in dialog and "Tables" in dialog and "You type" in dialog
+
+
+def test_cheatsheet_is_on_the_new_task_page_and_in_hebrew(client):
+    html = client.get("/task/new").get_data(as_text=True)
+    assert 'id="md-help"' in html and "data-md-help" in html
+    r = post(client, "/lang", data={"lang": "he", "csrf_token": client.token})
+    he = client.get("/task/new").get_data(as_text=True)
+    assert "דף עזר ל-Markdown" in he and "כותרות" in he and "מה שכותבים" in he and "דף עזר</button>" in he
+    assert "Headings" not in he and "Cheatsheet" not in he                    # every label is translated

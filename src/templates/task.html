@@ -39,7 +39,8 @@
 
 {% macro md_tools(task_id=none, owner=none) %}
   <span class="md-tools"><small class="muted">{{ _('Markdown is supported. Diagrams go in a fenced block that starts with ```mermaid') }}</small>
-    <button type="button" class="link" data-md-toggle {% if task_id %}data-task="{{ task_id }}" data-owner="{{ owner }}"{% endif %}>{{ _('Preview') }}</button></span>
+    <span class="md-buttons"><button type="button" class="link" data-md-help>{{ _('Cheatsheet') }}</button>
+    <button type="button" class="link" data-md-toggle {% if task_id %}data-task="{{ task_id }}" data-owner="{{ owner }}"{% endif %}>{{ _('Preview') }}</button></span></span>
 {% endmacro %}
 
 {% macro att_item(task, a, owner, removable=false) %}
@@ -268,4 +269,25 @@
 </section>
 {% endif %}
 </div>
+<dialog id="md-help" class="md-help">
+  <form method="dialog" class="stack">
+    <div class="section-head">
+      <h3>{{ _('Markdown cheatsheet') }}</h3>
+      <button class="link">{{ _('Close') }}</button>
+    </div>
+    <table class="cheat">
+      <thead><tr><th>{{ _('You type') }}</th><th>{{ _('You get') }}</th></tr></thead>
+      <tbody>
+      {% for title, source, html in md_cheatsheet() %}
+        <tr><th colspan="2" class="cheat-title">{{ title }}</th></tr>
+        <tr>
+          <td><pre dir="ltr"><code>{{ source }}</code></pre></td>
+          <td class="md">{% if html %}{{ html }}{% else %}<span class="muted">{{ _('The attached image, and a link to the attached file. Use the file name as it is listed under Attachments.') }}</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted">{{ _('Not supported: raw HTML (it is shown as text), footnotes, math and emoji codes.') }}</p>
+  </form>
+</dialog>
 {% endblock %}

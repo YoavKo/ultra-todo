@@ -83,3 +83,35 @@ def test_other_code_blocks_are_unchanged():
     assert 'class="mermaid"' not in html("```mermaidish\nx\n```")                  # only the exact name
     assert 'class="mermaid"' not in html("    mermaid\n    indented code")        # indented code, no info string
     assert 'class="mermaid"' not in html("`mermaid`")
+
+
+def test_every_cheatsheet_example_really_renders_what_it_shows():
+    """The cheatsheet is what users learn from: each example must produce the markup it teaches."""
+    expect = {
+        "headings": ['<h1 dir="auto">Heading 1</h1>', '<h2 dir="auto">Heading 2</h2>', '<h3 dir="auto">Heading 3</h3>'],
+        "emphasis": ["<strong>bold</strong>", "<em>italic</em>", "<s>strikethrough</s>", "<code>inline code</code>"],
+        "lists": ["<ul>", "nested one", "<ol>", "<li dir=\"auto\">second</li>"],
+        "tasks": ['type="checkbox"', 'checked="checked"', "still to do"],
+        "quotes": ["<blockquote", "a quote inside it"],
+        "code": ['<code class="language-python">', "print(&#39;hello&#39;)"],
+        "links": ['<a href="https://example.com"', ">https://bare.urls.link.too</a>", 'href="mailto:someone@example.com"'],
+        "tables": ['<th style="text-align:left"', '<td style="text-align:right"', "apples"],
+        "divider": ["<hr />"],
+        "breaks": ["a new line<br />\nis a line break", "*a backslash escapes*"],
+        "diagrams": ['<pre class="mermaid" dir="ltr">flowchart LR'],
+    }
+    drawn = {key: src for key, src, shown in markup.CHEATSHEET if shown}
+    assert set(drawn) == set(expect), set(drawn) ^ set(expect)
+    for key, needles in expect.items():
+        out = html(drawn[key])
+        for needle in needles:
+            assert needle in out or needle.replace("&#39;", "'") in out, (key, needle, out)
+    keys = [k for k, _, _ in markup.CHEATSHEET]
+    assert len(keys) == len(set(keys)) and "files" in keys      # unique; the attachments example is shown, not drawn
+    assert not [k for k, _, shown in markup.CHEATSHEET if not shown and k != "files"]
+
+
+def test_what_the_cheatsheet_says_is_not_supported_really_is_not():
+    assert "<b>" not in html("<b>x</b>") and "&lt;b&gt;" in html("<b>x</b>")      # raw HTML is text
+    assert ":smile:" in html(":smile:") and "$a^2$" in html("$a^2$")             # no emoji codes, no math
+    assert 'class="footnote' not in html("x[^1]\n\n[^1]: note") and "<sup" not in html("x[^1]\n\n[^1]: note")

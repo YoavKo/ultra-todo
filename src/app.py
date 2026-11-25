@@ -75,8 +75,20 @@ def create_app(engine: Engine, default_lang: str | None = None, can_open: bool =
                                                           name=a["name"])
         return markup.render(text, lambda href: urls.get(unquote(href)))
 
+    def md_cheatsheet():
+        """[(title, what you type, what you get as HTML or None)] for the cheatsheet dialog."""
+        titles = {
+            "headings": _("Headings"), "emphasis": _("Emphasis"), "lists": _("Lists"),
+            "tasks": _("Task lists"), "quotes": _("Quotes"), "code": _("Code"), "links": _("Links"),
+            "files": _("Images and files you attached"), "tables": _("Tables"), "divider": _("Divider"),
+            "breaks": _("Line breaks and escaping"), "diagrams": _("Diagrams (Mermaid)"),
+        }
+        return [(titles[key], source, markup.render(source) if drawn else None)
+                for key, source, drawn in markup.CHEATSHEET]
+
     app.jinja_env.globals.update(priority_label=priority_label, status_label=status_label,
-                                 PRIORITIES=PRIORITIES, STATUSES=STATUSES, md=md)
+                                 PRIORITIES=PRIORITIES, STATUSES=STATUSES, md=md,
+                                 md_cheatsheet=md_cheatsheet)
 
     @app.template_filter("dt")
     def _dt(value):

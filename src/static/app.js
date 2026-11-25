@@ -62,7 +62,10 @@
     return mermaidReady;
   }
   async function renderMermaid(root = document) {
-    const nodes = [...root.querySelectorAll("pre.mermaid:not([data-processed])")];
+    // a diagram inside a closed dialog (the cheatsheet) waits until it is opened: it cannot be
+    // measured while hidden, and pages should not load the library for an example nobody opened
+    const nodes = [...root.querySelectorAll("pre.mermaid:not([data-processed])")]
+      .filter((n) => !n.closest("dialog:not([open])"));
     if (!nodes.length) return;
     nodes.forEach((n) => { n.dataset.source = n.textContent; });  // mermaid empties a node it cannot draw
     try { await (await loadMermaid()).run({ nodes, suppressErrors: true }); }
@@ -258,6 +261,16 @@
       else if ((e.ctrlKey || e.metaKey) && e.key === "Enter") form.requestSubmit();
     });
   });
+
+  // ---- Markdown cheatsheet (one dialog per page, opened from every editor) ------
+  const helpDialog = document.getElementById("md-help");
+  if (helpDialog) {
+    document.querySelectorAll("[data-md-help]").forEach((b) => b.addEventListener("click", () => {
+      helpDialog.showModal();
+      renderMermaid(helpDialog);  // the diagram example is drawn when it is first needed
+    }));
+    helpDialog.addEventListener("click", (e) => { if (e.target === helpDialog) helpDialog.close(); });
+  }
 
   // ---- Markdown preview toggle (description, comment composer, comment edit) --
   document.querySelectorAll("[data-md-toggle]").forEach((b) => b.addEventListener("click", async () => {

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ultra-todo 0.1.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-25 02:56+0200\n"
+"POT-Creation-Date: 2026-11-25 02:59+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -66,6 +66,42 @@ msgstr ""
 
 msgid "Update failed."
 msgstr ""
+
+msgid "Headings"
+msgstr "Headings"
+
+msgid "Emphasis"
+msgstr "Emphasis"
+
+msgid "Lists"
+msgstr "Lists"
+
+msgid "Task lists"
+msgstr "Task lists"
+
+msgid "Quotes"
+msgstr "Quotes"
+
+msgid "Code"
+msgstr "Code"
+
+msgid "Links"
+msgstr "Links"
+
+msgid "Images and files you attached"
+msgstr "Images and files you attached"
+
+msgid "Tables"
+msgstr "Tables"
+
+msgid "Divider"
+msgstr "Divider"
+
+msgid "Line breaks and escaping"
+msgstr "Line breaks and escaping"
+
+msgid "Diagrams (Mermaid)"
+msgstr "Diagrams (Mermaid)"
 
 msgid "Invalid or missing CSRF token. Reload the page."
 msgstr ""
@@ -287,7 +323,12 @@ msgstr ""
 msgid ""
 "Markdown is supported. Diagrams go in a fenced block that starts with "
 "```mermaid"
-msgstr "Markdown is supported. Diagrams go in a fenced block that starts with ```mermaid"
+msgstr ""
+"Markdown is supported. Diagrams go in a fenced block that starts with "
+"```mermaid"
+
+msgid "Cheatsheet"
+msgstr "Cheatsheet"
 
 msgid "Remove"
 msgstr ""
@@ -357,6 +398,28 @@ msgstr ""
 
 msgid "No comments yet."
 msgstr ""
+
+msgid "Markdown cheatsheet"
+msgstr "Markdown cheatsheet"
+
+msgid "Close"
+msgstr "Close"
+
+msgid "You type"
+msgstr "You type"
+
+msgid "You get"
+msgstr "You get"
+
+msgid ""
+"The attached image, and a link to the attached file. Use the file name as"
+" it is listed under Attachments."
+msgstr "The attached image, and a link to the attached file. Use the file name as it is listed under Attachments."
+
+msgid ""
+"Not supported: raw HTML (it is shown as text), footnotes, math and emoji "
+"codes."
+msgstr "Not supported: raw HTML (it is shown as text), footnotes, math and emoji codes."
 
 #~ msgid "Markdown is supported"
 #~ msgstr "Markdown is supported"

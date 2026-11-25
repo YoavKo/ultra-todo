@@ -67,6 +67,23 @@ def _make() -> MarkdownIt:
 
 _md = _make()
 
+# The cheatsheet shown by the editors' "Cheatsheet" button: (key, what you type, drawn here?).
+# It is rendered by `render` itself, so it can only show what really works; a test pins it.
+CHEATSHEET: list[tuple[str, str, bool]] = [
+    ("headings", "# Heading 1\n## Heading 2\n### Heading 3", True),
+    ("emphasis", "**bold**  *italic*  ~~strikethrough~~  `inline code`", True),
+    ("lists", "- a bullet\n  - nested one\n- another\n\n1. first\n2. second", True),
+    ("tasks", "- [x] done\n- [ ] still to do", True),
+    ("quotes", "> a quote\n>\n> > a quote inside it", True),
+    ("code", "```python\nprint('hello')\n```", True),
+    ("links", "[link text](https://example.com)\nhttps://bare.urls.link.too\n<someone@example.com>", True),
+    ("files", "![caption](shot.png)\n[the log](trace.log)", False),
+    ("tables", "| Item | Qty |\n|:-----|----:|\n| apples | 3 |\n| pears | 12 |", True),
+    ("divider", "above\n\n---\n\nbelow", True),
+    ("breaks", "a new line\nis a line break\n\n\\*a backslash escapes\\*", True),
+    ("diagrams", "```mermaid\nflowchart LR\n  A[Write] --> B{Preview?}\n  B -- yes --> C[Save]\n  B -- no --> A\n```", True),
+]
+
 
 def render(text: str | None, resolve: Callable[[str], str | None] | None = None) -> Markup:
     """HTML for `text`. `resolve` maps a relative file reference to an attachment URL (or None)."""

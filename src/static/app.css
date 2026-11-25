@@ -109,7 +109,15 @@ table.tasks th, table.tasks td { padding: 8px 10px; border-block-end: 1px solid 
 .section-head h3 { margin-block: .6rem; }
 .description { border-block-start: 1px solid var(--line); margin-block-start: 16px; padding-block-start: 4px; }
 .md-edit { display: flex; flex-direction: column; gap: 4px; }
-.md-tools { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; }
+.md-tools { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
+.md-buttons { display: flex; gap: 14px; }
+.md-help { max-inline-size: min(780px, 94vw); max-block-size: 86vh; overflow: auto; }
+.cheat { inline-size: 100%; border-collapse: collapse; }
+.cheat thead th { text-align: start; font-size: .85rem; color: var(--muted); padding: 2px 8px; }
+.cheat-title { text-align: start; background: var(--chip); font-size: .85rem; padding: 4px 8px; }
+.cheat td { vertical-align: top; inline-size: 50%; border-block-end: 1px solid var(--line); padding: 6px 8px; }
+.cheat pre { margin: 0; white-space: pre-wrap; font-size: .85rem; direction: ltr; text-align: left; }
+.cheat .md { font-size: .95rem; }
 .md.preview { border: 1px dashed var(--line); border-radius: 6px; padding: 8px 10px; min-block-size: 3rem; }
 
 /* rendered Markdown (descriptions, comments, previews) */

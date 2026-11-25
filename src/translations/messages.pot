@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-25 02:56+0200\n"
+"POT-Creation-Date: 2026-11-25 02:59+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -64,6 +64,42 @@ msgid "Push failed."
 msgstr ""
 
 msgid "Update failed."
+msgstr ""
+
+msgid "Headings"
+msgstr ""
+
+msgid "Emphasis"
+msgstr ""
+
+msgid "Lists"
+msgstr ""
+
+msgid "Task lists"
+msgstr ""
+
+msgid "Quotes"
+msgstr ""
+
+msgid "Code"
+msgstr ""
+
+msgid "Links"
+msgstr ""
+
+msgid "Images and files you attached"
+msgstr ""
+
+msgid "Tables"
+msgstr ""
+
+msgid "Divider"
+msgstr ""
+
+msgid "Line breaks and escaping"
+msgstr ""
+
+msgid "Diagrams (Mermaid)"
 msgstr ""
 
 msgid "Invalid or missing CSRF token. Reload the page."
@@ -288,6 +324,9 @@ msgid ""
 "```mermaid"
 msgstr ""
 
+msgid "Cheatsheet"
+msgstr ""
+
 msgid "Remove"
 msgstr ""
 
@@ -355,5 +394,27 @@ msgid "Delete"
 msgstr ""
 
 msgid "No comments yet."
+msgstr ""
+
+msgid "Markdown cheatsheet"
+msgstr ""
+
+msgid "Close"
+msgstr ""
+
+msgid "You type"
+msgstr ""
+
+msgid "You get"
+msgstr ""
+
+msgid ""
+"The attached image, and a link to the attached file. Use the file name as"
+" it is listed under Attachments."
+msgstr ""
+
+msgid ""
+"Not supported: raw HTML (it is shown as text), footnotes, math and emoji "
+"codes."
 msgstr ""
 
