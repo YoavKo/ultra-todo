@@ -25,7 +25,9 @@ ultra-todo/
 │   ├── static/{app.css,app.js,vendor/mermaid.min.js}   # Mermaid 12.3.0 bundled (MIT, licence file beside it)
 │   └── templates/{base,board,task,list}.html
 ├── shell/utd.bash            # `utd` function + tab completion (sourced from ~/.bashrc)
-├── docs/screenshots/         # README images (web UI in dark mode, terminal renders)
+├── README.md                 # short overview: highlights, quick start, links
+├── docs/GUIDE.md             # the full user guide (syntax, commands, REPL, file formats, development)
+├── docs/screenshots/         # images for both (web UI in dark mode, terminal renders)
 └── tests/                    # pytest: engine/index, sync, routes, i18n, repos, cli, repl, markup
 ```
 (Design doc puts `templates/` beside `src/`; keeping it inside `src/` so Flask finds it by default — trivial to move.)
