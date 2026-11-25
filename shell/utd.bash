@@ -47,12 +47,13 @@ _utd() {
     local ids
     ids() { utd "$first" ls --ids 2>/dev/null; }
     if [ "$COMP_CWORD" -eq 2 ]; then
-        COMPREPLY=($(compgen -W "ls board next new pull save migrate serve $(ids)" -- "$cur")); return
+        COMPREPLY=($(compgen -W "ls board next new pull save migrate repl serve $(ids)" -- "$cur")); return
     fi
     case "$second" in
         ls|board) COMPREPLY=($(compgen -W "$filter_flags --json" -- "$cur")) ;;
         next) COMPREPLY=($(compgen -W "$filter_flags -n --json" -- "$cur")) ;;
         new) COMPREPLY=($(compgen -W "-p --priority -a --assignee -t --tag -d --description --status --id --attach -h" -- "$cur")) ;;
+        repl) COMPREPLY=($(compgen -W "-h" -- "$cur")) ;;
         migrate) COMPREPLY=($(compgen -W "-h" -- "$cur")) ;;
         pull) COMPREPLY=($(compgen -W "--rebase -h" -- "$cur")) ;;
         save) COMPREPLY=($(compgen -W "-m --message --set-upstream -h" -- "$cur")) ;;

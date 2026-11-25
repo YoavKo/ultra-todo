@@ -226,8 +226,16 @@ def board_text(tasks: list[dict], width: int) -> str:
 
 
 # ---- commands --------------------------------------------------------------
+def status_arg(value: str) -> str:
+    """argparse type: todo | doing | done | blocked (and the other aliases) -> canonical status."""
+    key = value.strip().lower().replace(" ", "_")
+    if key not in STATUS_ALIASES:
+        raise argparse.ArgumentTypeError(f"invalid status {value!r} (choose todo, doing, done or blocked)")
+    return STATUS_ALIASES[key]
+
+
 def add_filters(ap: argparse.ArgumentParser) -> None:
-    ap.add_argument("--status", choices=STATUSES)
+    ap.add_argument("--status", type=status_arg, metavar="STATUS", help="todo | doing | done | blocked")
     ap.add_argument("--priority", choices=PRIORITIES)
     ap.add_argument("--assignee", metavar="NAME")
     ap.add_argument("-t", "--tag", action="append", default=[], metavar="TAG",
@@ -546,6 +554,10 @@ def pick_attachment(have: list[tuple[str, str, dict]], spec: str, tid: str) -> t
     return hits[0]
 
 
+class OpenError(EngineError):
+    """The system could not open a file (no opener installed)."""
+
+
 def launch(path: Path) -> None:
     """Open a file with the system's default application, without waiting for it."""
     if sys.platform == "win32":
@@ -553,7 +565,7 @@ def launch(path: Path) -> None:
         return
     opener = "open" if sys.platform == "darwin" else "xdg-open"
     if not shutil.which(opener):
-        fail(f"cannot open files here: {opener} not found (use --path to print the location)")
+        raise OpenError(f"cannot open files here: {opener} not found")
     subprocess.Popen([opener, str(path)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, start_new_session=True)
 
@@ -584,7 +596,10 @@ def cmd_open(engine: Engine, tid: str, specs: list[str], path_only: bool) -> Non
         if path_only:
             print(path)
         else:
-            launch(path)
+            try:
+                launch(path)
+            except OpenError as e:
+                fail(f"{e} (use --path to print the location)")
             print(f"opening {path.relative_to(engine.root)}")
 
 
@@ -884,6 +899,21 @@ def cmd_save(engine: Engine, argv: list[str], p: str) -> None:
         print("pushed")
 
 
+COMMAND_FUNCS = {"info": "cmd_info", "ls": "cmd_ls", "board": "cmd_board", "new": "cmd_new",
+                 "next": "cmd_next", "pull": "cmd_pull", "save": "cmd_save", "migrate": "cmd_migrate"}
+
+
+def dispatch(engine: Engine, rest: list[str], p: str) -> None:
+    """Run one command given as the words after REPL: [ACTION ...] (no action = info)."""
+    action = rest[0] if rest else None
+    if action is None or action.startswith("-"):
+        cmd_info(engine, rest, p)
+    elif action in COMMAND_FUNCS:
+        globals()[COMMAND_FUNCS[action]](engine, rest[1:], p)
+    else:
+        cmd_ticket(engine, action, rest[1:], p)
+
+
 def run(argv: list[str], p: str, db_path=None, registry=None) -> list[str] | None:
     """Handle ``REPO [ACTION ...]``. For ``serve`` return the argv to serve with (the caller
     starts the server); otherwise do the work and return None."""
@@ -898,20 +928,12 @@ def run(argv: list[str], p: str, db_path=None, registry=None) -> list[str] | Non
     if action == "serve":
         return ["--target", path, *rest[1:]]
     if action in ("-h", "--help"):
-        print(f"usage: {p} REPO [ls | board | next | new | pull | save | migrate | serve | ID [action]]\n"
+        print(f"usage: {p} REPO [ls | board | next | new | pull | save | migrate | repl | serve | ID [action]]\n"
               f"see {p} -h for the commands, or {p} REPO ls -h / board -h / ID -h")
         return None
-    engine = open_engine(path, db_path)
-    if action is None or action.startswith("-"):
-        cmd_info(engine, rest, p)
-    elif action == "ls":
-        cmd_ls(engine, rest[1:], p)
-    elif action == "board":
-        cmd_board(engine, rest[1:], p)
-    elif action in ("new", "next", "pull", "save", "migrate"):
-        {"new": cmd_new, "next": cmd_next, "pull": cmd_pull, "save": cmd_save,
-         "migrate": cmd_migrate}[action](
-            engine, rest[1:], p)
-    else:
-        cmd_ticket(engine, action, rest[1:], p)
+    if action == "repl":
+        import repl
+        repl.run_repl(path, p, db_path=db_path, registry=registry)
+        return None
+    dispatch(open_engine(path, db_path), rest, p)
     return None

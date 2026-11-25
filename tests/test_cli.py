@@ -390,7 +390,7 @@ def test_open_attachments(proj, capsys, tmp_path, monkeypatch):
 def test_launch_without_opener(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.sys, "platform", "linux")
     monkeypatch.setattr(cli.shutil, "which", lambda name: None)
-    with pytest.raises(SystemExit, match="xdg-open not found.*--path"):
+    with pytest.raises(cli.OpenError, match="xdg-open not found"):
         cli.launch(tmp_path / "x")
     calls = []
     monkeypatch.setattr(cli.shutil, "which", lambda name: "/usr/bin/" + name)
@@ -472,3 +472,17 @@ def test_comment_with_files(proj, capsys, tmp_path, monkeypatch):
     view = out(capsys)  # numbered oldest comment first: 1-2 in "see logs", 3 in the files-only comment
     assert "attachment 1: trace.txt" in view and "attachment 2: shot.png" in view
     assert "attachment 3: trace.txt" in view
+
+
+def test_status_filter_accepts_the_aliases(proj, capsys):
+    proj("TKT-102", "start")
+    out(capsys)
+    proj("ls", "--status", "doing", "--ids")  # TKT-101 was already in progress
+    assert out(capsys).split() == ["TKT-101", "TKT-102"]
+    proj("ls", "--status", "in_progress", "--ids")
+    assert out(capsys).split() == ["TKT-101", "TKT-102"]
+    proj("ls", "--status", "todo", "--ids")
+    assert out(capsys).split() == []
+    proj("board", "--status", "done")
+    with pytest.raises(SystemExit):
+        proj("ls", "--status", "later")
