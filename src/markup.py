@@ -11,6 +11,7 @@ import re
 from typing import Callable
 
 from markdown_it import MarkdownIt
+from markdown_it.common.utils import escapeHtml
 from markdown_it.rules_core import StateCore
 from markupsafe import Markup
 from mdit_py_plugins.tasklists import tasklists_plugin
@@ -45,8 +46,19 @@ def _post(state: StateCore) -> None:
                 child.attrSet("referrerpolicy", "no-referrer")
 
 
+def _fence(self, tokens, idx, options, env):
+    """A ```mermaid block becomes <pre class="mermaid"> with the escaped source; the page's
+    script turns it into a diagram (and leaves the text if the diagram does not parse)."""
+    token = tokens[idx]
+    if (token.info.split() or [""])[0] == "mermaid":
+        return f'<pre class="mermaid" dir="ltr">{escapeHtml(token.content)}</pre>\n'
+    return self._plain_fence(tokens, idx, options, env)
+
+
 def _make() -> MarkdownIt:
     md = MarkdownIt("commonmark", {"html": False, "linkify": True, "breaks": True})
+    md.renderer._plain_fence = md.renderer.fence
+    md.add_render_rule("fence", _fence)
     md.enable(["table", "strikethrough", "linkify"])
     md.use(tasklists_plugin)
     md.core.ruler.push("ultra_todo_post", _post)

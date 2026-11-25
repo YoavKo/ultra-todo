@@ -431,3 +431,23 @@ def test_markdown_preview_endpoint(md_client):
     assert md_client.post("/api/markdown", json={"text": "x", "task_id": "NOPE", "owner": "description"},
                           headers=h).status_code == 200                                      # unknown ticket: no resolving
     assert md_client.post("/api/markdown", json={}, headers=h).get_json()["html"] == ""
+
+
+def test_mermaid_diagrams_in_markdown(md_client):
+    md_client.eng.save_task({"id": "TKT-101", "description": "```mermaid\ngraph LR\n  A --> B\n```"})
+    html = md_client.get("/task/TKT-101").get_data(as_text=True)
+    assert '<pre class="mermaid" dir="ltr">graph LR\n  A --&gt; B\n</pre>' in html
+    # the page tells its script where the bundled library is, and the library is really served
+    assert '<meta name="mermaid-src" content="/static/vendor/mermaid.min.js">' in html
+    lib = md_client.get("/static/vendor/mermaid.min.js")
+    assert lib.status_code == 200 and b'globalThis["mermaid"]' in lib.data[-400:]
+    assert b"MIT" in md_client.get("/static/vendor/mermaid.LICENSE").data
+    assert 'src="/static/vendor' not in html          # loaded on demand by app.js, not on every page
+    assert "cdn" not in html.lower() and "jsdelivr" not in html.lower()               # fully offline
+    post(md_client, "/task/TKT-101/comment", data={"body": "```mermaid\nsequenceDiagram\n  A->>B: hi\n```",
+                                                    "csrf_token": md_client.token})
+    assert html.count('class="mermaid"') == 1                                           # description only so far
+    assert md_client.get("/task/TKT-101").get_data(as_text=True).count('class="mermaid"') == 2  # + the comment
+    pv = md_client.post("/api/markdown", json={"text": "```mermaid\npie\n \"a\": 1\n```"},
+                        headers={"X-CSRF-Token": md_client.token}).get_json()["html"]
+    assert 'class="mermaid"' in pv                                                      # the Preview toggle draws it too

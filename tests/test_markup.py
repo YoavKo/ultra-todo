@@ -67,3 +67,19 @@ def test_file_names_resolve_to_attachments_only_when_they_match():
 def test_output_is_markup_so_templates_do_not_escape_it():
     from markupsafe import Markup
     assert isinstance(markup.render("**x**"), Markup)
+
+
+def test_mermaid_blocks_become_placeholders_with_escaped_source():
+    out = html("```mermaid\ngraph TD\n  A[<b>x</b>] --> B\n```")
+    assert out == '<pre class="mermaid" dir="ltr">graph TD\n  A[&lt;b&gt;x&lt;/b&gt;] --&gt; B\n</pre>'
+    assert html("```mermaid title\nA-->B\n```").startswith('<pre class="mermaid"')   # extra words after the name
+    assert "<script" not in html("```mermaid\n<script>alert(1)</script>\n```")
+    assert html("```mermaid\n```") == '<pre class="mermaid" dir="ltr"></pre>'
+
+
+def test_other_code_blocks_are_unchanged():
+    assert html("```python\nprint(1)\n```") == '<pre><code class="language-python">print(1)\n</code></pre>'
+    assert html("```\nplain\n```") == "<pre><code>plain\n</code></pre>"
+    assert 'class="mermaid"' not in html("```mermaidish\nx\n```")                  # only the exact name
+    assert 'class="mermaid"' not in html("    mermaid\n    indented code")        # indented code, no info string
+    assert 'class="mermaid"' not in html("`mermaid`")

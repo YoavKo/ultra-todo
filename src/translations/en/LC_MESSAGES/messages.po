@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ultra-todo 0.1.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-25 02:36+0200\n"
+"POT-Creation-Date: 2026-11-25 02:45+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -226,6 +226,12 @@ msgstr ""
 
 msgid "Delete this? This cannot be undone."
 msgstr ""
+
+msgid "Could not load the diagram library."
+msgstr "Could not load the diagram library."
+
+msgid "This diagram could not be drawn; showing its text."
+msgstr "This diagram could not be drawn; showing its text."
 
 msgid "Preview"
 msgstr "Preview"

@@ -43,6 +43,38 @@
     if (!sticky && !actions.length && !files.length) setTimeout(() => el.remove(), 5000);
   }
 
+  // ---- Mermaid diagrams (```mermaid blocks) ------------------------------
+  // The library is bundled (static/vendor) and only loaded on pages that have a diagram.
+  let mermaidReady = null;
+  function loadMermaid() {
+    if (!mermaidReady) mermaidReady = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = document.querySelector('meta[name="mermaid-src"]').content;
+      s.onload = () => {
+        const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+        window.mermaid.initialize({ startOnLoad: false, securityLevel: "strict",
+          theme: dark ? "dark" : "default", suppressErrorRendering: true });
+        resolve(window.mermaid);
+      };
+      s.onerror = () => { mermaidReady = null; reject(new Error(T.mermaidFailed)); };
+      document.head.append(s);
+    });
+    return mermaidReady;
+  }
+  async function renderMermaid(root = document) {
+    const nodes = [...root.querySelectorAll("pre.mermaid:not([data-processed])")];
+    if (!nodes.length) return;
+    nodes.forEach((n) => { n.dataset.source = n.textContent; });  // mermaid empties a node it cannot draw
+    try { await (await loadMermaid()).run({ nodes, suppressErrors: true }); }
+    catch (e) { toast(e.message || T.mermaidFailed, "error"); }
+    nodes.forEach((n) => {  // a diagram that does not parse shows its text again, marked
+      if (!n.querySelector("svg")) {
+        n.textContent = n.dataset.source; n.classList.add("mermaid-error"); n.title = T.badDiagram;
+      }
+    });
+  }
+  renderMermaid();
+
   // ---- sync status + buttons ---------------------------------------
   const btnUpdate = document.getElementById("btn-update");
   const btnSave = document.getElementById("btn-save");
@@ -235,6 +267,7 @@
       const d = await api("/api/markdown", { text: ta.value, task_id: b.dataset.task, owner: b.dataset.owner });
       pv.innerHTML = d.html;  // the server escapes raw HTML, so this is markup we produced
       pv.dir = "auto"; pv.hidden = false; ta.hidden = true; b.textContent = T.write;
+      renderMermaid(pv);
     } catch (e) { toast(e.message, "error"); }
   }));
 

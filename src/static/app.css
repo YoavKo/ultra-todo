@@ -131,6 +131,12 @@ table.tasks th, table.tasks td { padding: 8px 10px; border-block-end: 1px solid 
 .md hr { border: 0; border-block-start: 1px solid var(--line); }
 .md ul.contains-task-list { list-style: none; padding-inline-start: 4px; }
 .md .task-list-item-checkbox { margin-inline-end: 6px; }
+.md pre.mermaid { background: none; padding: 0; text-align: center; white-space: pre; }
+.md pre.mermaid:not([data-processed]) { color: var(--muted); }           /* until it is drawn */
+.md pre.mermaid[data-processed] { overflow-x: auto; }
+.md pre.mermaid svg { max-inline-size: 100%; block-size: auto; }
+.md pre.mermaid.mermaid-error { background: var(--chip); padding: 10px 12px; text-align: left;
+  border-inline-start: 3px solid var(--danger); }
 .desc-files { display: flex; flex-direction: column; gap: 6px; }
 .desc-files .att { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
 .att-actions { display: flex; gap: 10px; align-items: center; }

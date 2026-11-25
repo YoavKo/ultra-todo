@@ -73,12 +73,30 @@ URLs that become links); a line break in the text is a line break on the page, a
 - **Attachments**: refer to an attached file by its name: `![screenshot](shot.png)` shows the image,
   `[the log](trace.log)` links to the file (in a comment, the comment's own files; in the description, the
   description's files).
+- **Diagrams**: a fenced block tagged `mermaid` is drawn as a [Mermaid](https://mermaid.js.org) diagram (flowcharts,
+  sequence, state, class, ER, Gantt, pie, ...), in descriptions, comments and the Preview. It follows the light/dark
+  theme. A diagram that does not parse stays as text, marked in red, so you can fix it.
+
+  ````markdown
+  ```mermaid
+  flowchart LR
+    A[Open /settings] --> B{Logged in?}
+    B -- no --> C[Login page]
+    B -- yes --> D[/settings/]
+  ```
+  ````
+
+  ![Mermaid diagrams in a ticket](docs/screenshots/task-mermaid-dark.png)
+
+  The library is **bundled**, not loaded from the internet: `src/static/vendor/mermaid.min.js` (Mermaid 12.3.0, MIT, see
+  `mermaid.LICENSE`; 5.5 MB), fetched by the page only when it contains a diagram, with Mermaid's `strict` security level.
+  Diagrams therefore work offline, and pages without one never download it.
 - **Hebrew and English** mix freely: every paragraph, list item, heading, quote and table cell picks its own direction;
   code stays left-to-right.
 - **Safe by construction**: raw HTML in the text is shown as text, never run; `javascript:`, `data:` and `file:` links
   are not linked; external links open in a new tab with `rel="noopener noreferrer"`, external images load lazily
   without a referrer.
-- **Files and the terminal**: the Markdown source is what is stored in `main.json5` and the comment files, so the
+- **Files and the terminal**: the Markdown source (diagrams included) is what is stored in `main.json5` and the comment files, so the
   files stay readable, and `utd . TKT-101` prints the source as written.
 
 ## Install and run (uv)
