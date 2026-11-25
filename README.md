@@ -9,6 +9,7 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 - **Zero-conflict GitOps** – the managed repo holds only text (`.json5`) written by the app. No database ever touches your project.
 - **Smart persistent index** – a single SQLite file in the global cache dir (`~/.cache/ultra-todo/app_global_index.sqlite3`, or the OS equivalent) serves fast lookups for all projects.
 - **Git hash invalidation** – on boot the app compares `git rev-parse HEAD` (plus uncommitted changes under `.todo/`) with the cached value. Unchanged → no disk scan; changed → only the modified files are re-parsed.
+- **Forgiving, self-healing reads** – a ticket file that cannot be read is skipped with a warning (shown in the app and the terminal), looked at again on every refresh, and picked up as soon as it is fixed; a multi-line description typed straight into the JSON is read too.
 - **DAG dependencies** – "blocked by" links are checked with DFS cycle detection; cycles return HTTP 400.
 
 ## Features
@@ -17,13 +18,13 @@ A self-hosted, local-first task manager written in Python (Flask). It manages **
 - **Priority** – high / medium / low (default medium): coloured badge on cards, priority filter, high-priority tasks listed first
 - **Dependencies** – each task page shows what blocks it and what it blocks, with one-click × to remove a link and a picker to add one (cycles are rejected)
 - **Tags** on tasks, with filter chips (AND / OR, shareable via URL)
-- **Markdown** in ticket descriptions and comments: rendered in the web UI (headings, lists, task lists, tables, quotes, code, links, images), with an **Edit** button that turns the description into a text box (Save / Cancel) and a **Preview** toggle in every editor
+- **Markdown** in ticket descriptions and comments: rendered in the web UI (headings, lists, task lists, tables, quotes, code, links, images), with an **Edit** button that turns the description into a text box (Save / Cancel), a **Preview** toggle and a **Cheatsheet** button in every editor, and **Mermaid diagrams** (a ```` ```mermaid ```` block), drawn offline by a bundled library
 - **Attachments on the ticket** – attach images and files to a ticket's description (task form: choose, paste or drop; CLI: `utd . TKT-101 attach FILE…`), stored in the ticket's own directory; an **Open** button next to every attachment (ticket and comments) opens it in your desktop's default application
 - **Comments** per task: newest first, author and time stamped by the server, editable, with image/file attachments stored next to the task
 - **Update** button: `git pull --ff-only`, then the index is refreshed from the diff (rebase offered if the branch diverged; aborted cleanly on conflict)
 - **Save work** button: commits only `.todo/` changes (editable message) and pushes; never force-pushes, never stages files outside `.todo/`
 - **Several repos** – serve many at once (free ports picked automatically); `ls` / `open` / `forget` manage the list of known repos
-- **Terminal-first too** – the `utd` shortcut (with tab completion): `utd . ls`, `utd . board`, `utd . TKT-101 done`, `utd . new "…"`, `utd . save`: browse and change tickets, comment, set dependencies and sync without opening the browser
+- **Terminal-first too** – the `utd` shortcut (with tab completion and short forms): `utd . ls`, `utd . board`, `utd . TKT-101 done`, `utd . new "…"`, `utd . save`: browse, filter, sort and export (`--csv`, `--md`) tickets; create, edit, comment, attach, set dependencies and sync without opening the browser. `utd` alone inside a repo opens an interactive **REPL** with Tab completion (`cd TKT-101`, then `done`, `comment -m …`), and `utd open` serves the repo and opens the web UI in your browser
 - Hebrew + English: translated UI, RTL layout, `dir="auto"` for mixed-language content; language set with `--lang` and/or the in-app toggle
 
 ## Screenshots
@@ -308,6 +309,8 @@ directory with one of those names write `utd ./ls`.
 | `--db PATH` | Use another SQLite index file (repos served this way are not added to the known list) |
 | `--threads N` | Server threads (default 8) |
 | `--debug` | Flask dev server with auto-reload and debug logging |
+| `--browser` | Open the web UI in a browser once the server is up (`utd open` / `utd REPO open` add it) |
+| `--no-browser` | With `open`: serve without opening a browser |
 
 ## File formats
 
@@ -330,7 +333,7 @@ Task:
   status: "in_progress",        // todo | in_progress | done | blocked
   priority: "high",             // high | medium | low (optional, default medium)
   assignee: "yoav",
-  description: "…",
+  description: "…",             // Markdown (shown rendered in the web UI)
   tags: ["backend", "דחוף"],
   blocked_by: ["TKT-099"],
   attachments: [{ name: "error.png", file: "attachments/description/error.png", mime: "image/png", size: 4821 }],  // optional
@@ -345,7 +348,7 @@ Comment (one file per comment, so concurrent comments never conflict):
   author: "Yoav <yoav@example.com>",     // from git config, set by the server
   created_at: "2026-10-18T10:00:00.123Z",
   edited_at: null,
-  body: "…",
+  body: "…",                       // Markdown
   attachments: [{ name: "screenshot.png", file: "attachments/20261018-100000-ab12cd/screenshot.png", mime: "image/png", size: 48213 }],
 }
 ```
@@ -366,11 +369,15 @@ uv run pybabel update -i src/translations/messages.pot -d src/translations
 uv run pybabel compile -d src/translations
 ```
 
+After `update`, look at the new entries in `src/translations/he/LC_MESSAGES/messages.po`: `pybabel` fills a new string with a *guess* from a similar one and marks it `#, fuzzy` (a guess is not compiled, but it is wrong text). Write the real translation and delete the `fuzzy` line. English needs no entries; it falls back to the source text.
+
 ## Development
 
 ```bash
-uv run pytest                      # engine, sync (temp bare remote + 2 clones), routes, i18n, repos list, terminal commands (incl. save/pull against a temp remote)
+uv run pytest                      # engine and index, sync (temp bare remote + 2 clones), routes, i18n, repos list, terminal commands and REPL, Markdown/Mermaid, ~155 tests
 uv run ultra-todo --target . --debug   # Flask dev server with reload
 ```
 
-Layout: `src/engine.py` (files, git, SQLite index, sync), `src/graph.py` (DAG), `src/repos.py` (known-repos list), `src/i18n.py`, `src/cli.py` (the `REPO ls|board|next|new|pull|save|ID …` terminal commands), `src/app.py` (routes, serve, `ls`/`open`/`forget`), `shell/utd.bash` (the `utd` shortcut + completion), `docs/screenshots/` (README images), `src/templates/`, `src/static/`, `src/translations/`.
+Layout: `src/engine.py` (files, git, SQLite index, sync), `src/graph.py` (DAG), `src/repos.py` (known-repos list), `src/i18n.py`, `src/cli.py` (the `REPO ls|board|next|new|pull|save|ID …` terminal commands), `src/repl.py` (the interactive prompt and its Tab completion), `src/markup.py` (Markdown → safe HTML, the cheatsheet), `src/app.py` (routes, serve, `ls`/`open`/`forget`), `shell/utd.bash` (the `utd` shortcut + completion), `docs/screenshots/` (README images), `src/templates/`, `src/static/` (including `vendor/mermaid.min.js`, the bundled Mermaid 12.3.0 with its MIT licence), `src/translations/`.
+
+Runtime dependencies: Flask, waitress, flask-babel, json5, platformdirs, markdown-it-py (+ linkify-it-py, mdit-py-plugins). Everything else, Mermaid included, ships in the repo, so the app works offline.

@@ -3,14 +3,14 @@
 ## Context
 Greenfield project in `ultra-todo/` (Python 3.12, git 2.43). Build the self-hosted GitOps task manager from the design doc: JSON5 task files in `<repo>/.todo/tasks/`, a global SQLite index in the OS cache dir, HEAD-hash cache invalidation, DAG dependency validation, served by Flask + waitress. Added requirement: **full Hebrew + English support** — translated UI, RTL layout, correct Hebrew content handling, language chosen via CLI default plus in-UI toggle; **tags** with filtering; per-task **comments** with attachments; **uv** support.
 
-Added later: **Markdown** in descriptions and comments with an Edit/Save/Cancel description editor and a Preview toggle; **attachments on the ticket description** and a **per-ticket directory** (`<ID>/main.json5`), shorter comment ids, a `migrate` command for the old layout; **priority** (high / medium / low); a **dependencies panel** on the task page (what blocks it and what it blocks, one-click removal); **several repos at once** with automatic free-port selection; a **known-repos list** with `ls` / `open` / `forget` commands; and a `utd` bash shortcut with tab completion; then **terminal commands** to browse and change tickets without the browser (`utd REPO ls|board|next|new|pull|save|migrate|ID …`).
+Added later: **Markdown** in descriptions and comments (an Edit/Save/Cancel description editor, a Preview toggle, a Cheatsheet dialog, **Mermaid** diagrams, forgiving file reads and an index that retries unreadable files); **attachments on the ticket description** and a **per-ticket directory** (`<ID>/main.json5`), shorter comment ids, a `migrate` command for the old layout; **priority** (high / medium / low); a **dependencies panel** on the task page (what blocks it and what it blocks, one-click removal); **several repos at once** with automatic free-port selection; a **known-repos list** with `ls` / `open` / `forget` commands; and a `utd` bash shortcut with tab completion; then **terminal commands** to browse and change tickets without the browser (`utd REPO ls|board|next|new|pull|save|migrate|ID …`), later extended with attachments, field commands, filters, export and short forms, an interactive **REPL** with Tab completion, and `open` (serve and open the browser, plus an Open button for attachments in the web UI).
 
 ## Layout
 ```
 ultra-todo/
 ├── pyproject.toml            # uv-managed: deps, `[project.scripts] ultra-todo = "app:main"`, dev group (pytest)
 ├── uv.lock                   # committed lockfile
-├── requirements.txt          # generated via `uv export` for non-uv users (flask, waitress, json5, flask-babel, platformdirs)
+├── requirements.txt          # generated via `uv export` for non-uv users (flask, waitress, json5, flask-babel, platformdirs, markdown-it-py, linkify-it-py, mdit-py-plugins)
 ├── babel.cfg
 ├── src/
 │   ├── app.py                # serve + `ls`/`open`/`forget`, routes, locale selector; hands `REPO …` to cli.py
@@ -22,11 +22,11 @@ ultra-todo/
 │   ├── graph.py              # DAG + DFS cycle detection
 │   ├── i18n.py               # Babel setup, locale resolution, direction helper
 │   ├── translations/{he,en}/LC_MESSAGES/messages.po
-│   ├── static/{app.css,app.js}
+│   ├── static/{app.css,app.js,vendor/mermaid.min.js}   # Mermaid 12.3.0 bundled (MIT, licence file beside it)
 │   └── templates/{base,board,task,list}.html
 ├── shell/utd.bash            # `utd` function + tab completion (sourced from ~/.bashrc)
 ├── docs/screenshots/         # README images (web UI in dark mode, terminal renders)
-└── tests/                    # pytest: engine, sync, routes, i18n, repos, cli
+└── tests/                    # pytest: engine/index, sync, routes, i18n, repos, cli, repl, markup
 ```
 (Design doc puts `templates/` beside `src/`; keeping it inside `src/` so Flask finds it by default — trivial to move.)
 
@@ -137,6 +137,9 @@ Build adjacency from `dependencies` for the project, add the proposed edge(s), i
 7. Later additions: dependencies panel, priority, automatic free port, known-repos list (`ls`/`open`/`forget`), `utd` shortcut with tab completion.
 8. File-format changes: `<ID>/main.json5`, comment ids `YYYYMMDD-HHMMSS-hex`, description attachments (engine, task form, `attach`/`detach`), `migrate`.
 9. Terminal commands (`cli.py`): info/ls/board/next/ticket view, new/status/priority/comment/edit/dependencies, pull/save, `shell/utd.bash` with completion, README screenshots.
+10. Terminal extras: attachments from the CLI (`attach`/`detach`/`open`, numbered, `comment -f`), field commands (`title`/`assign`/`tag`/`rm`), `deps` tree, `ls --blocked/--since/--sort`, `--csv`/`--md` export, short forms.
+11. The REPL (`repl.py`): Tab completion, current ticket (`cd`), `utd` alone opens it; `open [REPO]` / `REPO open` and the web **Open** button for attachments.
+12. Markdown (`markup.py`): description view with Edit/Save/Cancel, Preview, Mermaid diagrams (bundled library), the Cheatsheet dialog, forgiving file reads, and the index retrying unreadable files.
 
 ## Verification
 - Tags: `uv run pytest` cases — tag normalization/dedupe, Hebrew tag round-trip, AND vs OR filtering, tag edit updates `task_tags`, differential hydration removes tags of deleted tasks, `/api/tags` counts.
@@ -156,3 +159,5 @@ Build adjacency from `dependencies` for the project, add the proposed edge(s), i
 
 ## Open points (defaults chosen, easy to change)
 Uncommitted-change handling as above; bind to localhost only; statuses fixed to four values (configurable later via `.todo/config.json5`).
+
+Chosen defaults that could be revisited: Mermaid is **bundled** in the repo (5.5 MB, offline, no CDN) rather than fetched, and loaded only on pages that show a diagram; `open` and `serve` are reserved words after a repo (a ticket with those ids is not reachable by them on the command line); `open` starts the browser by default (`--no-browser` to keep it closed) while `serve` does not; an image embedded in the description also appears in the attachments list below it; the description section sits below the ticket's fields; the CLI shows Markdown as its source; `edit` opens the JSON file (a friendlier text format with the description as the body would avoid hand-escaping line breaks); description attachments are anyone's to remove, comment ones only their author's.

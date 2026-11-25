@@ -35,7 +35,7 @@
 <h2>הקשר</h2>
 <p>פרויקט חדש לגמרי בתיקייה <code>ultra-todo/</code> (Python 3.12, git 2.43). בונים את מנהל המשימות המתואר במסמך העיצוב: קובצי משימה בפורמט JSON5 בתוך <code>&lt;repo&gt;/.todo/tasks/</code>, אינדקס SQLite גלובלי בתיקיית המטמון של מערכת ההפעלה, פסילת מטמון לפי ה-hash של <code>HEAD</code>, אימות תלויות כגרף חסר מעגלים (DAG), והכול מוגש באמצעות Flask ו-waitress.</p>
 <p>דרישות שנוספו: <strong>תמיכה מלאה בעברית ובאנגלית</strong> (ממשק מתורגם, פריסת RTL, וטיפול נכון בתוכן עברי), בחירת השפה דרך דגל שורת פקודה כברירת מחדל ודרך מתג בתוך הממשק; <strong>תגיות (tags)</strong> עם סינון; <strong>תגובות</strong> (דיון) בכל משימה, עם קבצים מצורפים ותמונות; ותמיכה ב-<strong>uv</strong>.</p>
-<p>נוספו בהמשך: <strong>Markdown</strong> בתיאורים ובתגובות עם עורך תיאור (עריכה/שמירה/ביטול) ומתג תצוגה מקדימה; <strong>קבצים מצורפים לתיאור המשימה</strong> ו<strong>תיקייה לכל משימה</strong> (<code>&lt;ID&gt;/main.json5</code>), מזהי תגובות קצרים יותר, ופקודת <code>migrate</code> למבנה הישן; <strong>עדיפות</strong> (גבוהה / בינונית / נמוכה); <strong>חלונית תלויות</strong> בעמוד המשימה (מה חוסם אותה ומה היא חוסמת, עם הסרה בלחיצה); <strong>הרצת כמה מאגרים במקביל</strong> עם בחירת פורט פנוי אוטומטית; <strong>רשימת מאגרים מוכרים</strong> עם הפקודות <code>ls</code> / <code>open</code> / <code>forget</code>; וקיצור דרך ל-bash בשם <code>utd</code> עם השלמה בטאב; ולאחר מכן <strong>פקודות טרמינל</strong> לעיון במשימות ולשינוין בלי דפדפן (<code>utd REPO ls|board|next|new|pull|save|ID …</code>).</p>
+<p>נוספו בהמשך: <strong>Markdown</strong> בתיאורים ובתגובות (עורך תיאור עם עריכה/שמירה/ביטול, מתג תצוגה מקדימה, דיאלוג דף עזר, תרשימי <strong>Mermaid</strong>, קריאת קבצים סלחנית ואינדקס שמנסה שוב קבצים שאי אפשר לקרוא); <strong>קבצים מצורפים לתיאור המשימה</strong> ו<strong>תיקייה לכל משימה</strong> (<code>&lt;ID&gt;/main.json5</code>), מזהי תגובות קצרים יותר, ופקודת <code>migrate</code> למבנה הישן; <strong>עדיפות</strong> (גבוהה / בינונית / נמוכה); <strong>חלונית תלויות</strong> בעמוד המשימה (מה חוסם אותה ומה היא חוסמת, עם הסרה בלחיצה); <strong>הרצת כמה מאגרים במקביל</strong> עם בחירת פורט פנוי אוטומטית; <strong>רשימת מאגרים מוכרים</strong> עם הפקודות <code>ls</code> / <code>open</code> / <code>forget</code>; וקיצור דרך ל-bash בשם <code>utd</code> עם השלמה בטאב; ולאחר מכן <strong>פקודות טרמינל</strong> לעיון במשימות ולשינוין בלי דפדפן (<code>utd REPO ls|board|next|new|pull|save|ID …</code>), שהורחבו אחר כך עם קבצים מצורפים, פקודות שדות, מסננים, ייצוא וצורות קצרות, <strong>REPL</strong> אינטראקטיבי עם השלמה בטאב, ו-<code>open</code> (הגשה ופתיחת הדפדפן, וכפתור פתיחה לקבצים מצורפים בממשק הרשת).</p>
 
 <h2>מבנה הפרויקט</h2>
 <pre><code>ultra-todo/
@@ -53,7 +53,7 @@
 │   ├── graph.py         # DAG וזיהוי מעגלים (DFS)
 │   ├── i18n.py          # Babel, קביעת שפה, כיוון כתיבה
 │   ├── translations/{he,en}/LC_MESSAGES/messages.po
-│   ├── static/{app.css,app.js}
+│   ├── static/{app.css,app.js,vendor/mermaid.min.js}   # ‏Mermaid 12.3.0 מצורף (MIT, קובץ הרישיון לידו)
 │   └── templates/{base,board,task,list}.html
 ├── shell/utd.bash       # הפונקציה utd + השלמה בטאב (נטענת מ-~/.bashrc)
 ├── docs/screenshots/    # תמונות ה-README (ממשק הרשת במצב כהה, תצלומי טרמינל)
@@ -201,6 +201,9 @@
   <li>ליטוש: דפי שגיאה, ‏README עם הוראות שימוש ופקודות <code>pybabel</code>.</li>
   <li>תוספות אחרי הגרסה הראשונה: חלונית תלויות, עדיפות, פורט פנוי אוטומטי, רשימת מאגרים (<code>ls</code>/<code>open</code>/<code>forget</code>) וקיצור <code>utd</code> עם השלמה בטאב.</li>
   <li>שינויי פורמט קבצים: ‏<code>&lt;ID&gt;/main.json5</code>, מזהי תגובות <code>YYYYMMDD-HHMMSS-hex</code>, קבצים מצורפים לתיאור (מנוע, טופס המשימה, ‏<code>attach</code>/<code>detach</code>), ו-<code>migrate</code>.</li>
+  <li>תוספות טרמינל: קבצים מצורפים מה-CLI (‏<code>attach</code>/<code>detach</code>/<code>open</code>, ממוספרים, ‏<code>comment -f</code>), פקודות שדות (‏<code>title</code>/<code>assign</code>/<code>tag</code>/<code>rm</code>), עץ <code>deps</code>, ‏<code>ls --blocked/--since/--sort</code>, ייצוא <code>--csv</code>/<code>--md</code>, וצורות קצרות.</li>
+  <li>ה-REPL (‏<code>repl.py</code>): השלמה בטאב, משימה נוכחית (‏<code>cd</code>), ‏<code>utd</code> לבדו פותח אותו; ‏<code>open [REPO]</code> / ‏<code>REPO open</code> וכפתור <strong>פתיחה</strong> בממשק הרשת לקבצים מצורפים.</li>
+  <li>‏Markdown (‏<code>markup.py</code>): תצוגת תיאור עם עריכה/שמירה/ביטול, תצוגה מקדימה, תרשימי Mermaid (ספרייה מצורפת), דיאלוג דף העזר, קריאת קבצים סלחנית, והאינדקס שמנסה שוב קבצים שאי אפשר לקרוא.</li>
   <li>פקודות טרמינל (<code>cli.py</code>): מידע/ls/board/next/תצוגת משימה, ‏new/status/priority/comment/edit/תלויות, ‏pull/save, ‏<code>shell/utd.bash</code> עם השלמה, ותמונות ל-README.</li>
 </ol>
 
@@ -223,6 +226,7 @@
 </ul>
 
 <h2>נקודות פתוחות (נבחרו ברירות מחדל, קל לשנות)</h2>
+<p>ברירות מחדל שנבחרו וניתן לשקול מחדש: ‏Mermaid <strong>מצורף</strong> למאגר (‏5.5MB, בלי CDN, עובד offline) ונטען רק בעמודים שמציגים תרשים; ‏<code>open</code> ו-<code>serve</code> הן מילים שמורות אחרי מאגר; ‏<code>open</code> פותח דפדפן כברירת מחדל (‏<code>--no-browser</code> לביטול) ואילו <code>serve</code> לא; תמונה שמשובצת בתיאור מופיעה גם ברשימת הקבצים המצורפים שמתחתיו; קטע התיאור נמצא מתחת לשדות המשימה; ה-CLI מציג Markdown כמקור; הפקודה <code>edit</code> פותחת את קובץ ה-JSON (פורמט טקסט ידידותי יותר, עם התיאור כגוף, היה חוסך escape ידני של שבירות שורה); קבצים מצורפים לתיאור אפשר להסיר לכל אחד, ושל תגובה – רק למחבר.</p>
 <p>טיפול בשינויים שלא נעשה להם commit כמתואר; קשירה ל-localhost בלבד; ארבעה סטטוסים קבועים (ניתן להגדרה בעתיד דרך <code>.todo/config.json5</code>).</p>
 
 </main>
