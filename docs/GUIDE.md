@@ -381,3 +381,5 @@ uv run ultra-todo --target . --debug   # Flask dev server with reload
 Layout: `src/engine.py` (files, git, SQLite index, sync), `src/graph.py` (DAG), `src/repos.py` (known-repos list), `src/i18n.py`, `src/cli.py` (the `REPO ls|board|next|new|pull|save|ID …` terminal commands), `src/repl.py` (the interactive prompt and its Tab completion), `src/markup.py` (Markdown → safe HTML, the cheatsheet), `src/app.py` (routes, serve, `ls`/`open`/`forget`), `shell/utd.bash` (the `utd` shortcut + completion), `docs/` (this guide and its `screenshots/`), `src/templates/`, `src/static/` (including `vendor/mermaid.min.js`, the bundled Mermaid 12.3.0 with its MIT licence), `src/translations/`.
 
 Runtime dependencies: Flask, waitress, flask-babel, json5, platformdirs, markdown-it-py (+ linkify-it-py, mdit-py-plugins). Everything else, Mermaid included, ships in the repo, so the app works offline.
+
+License: [MIT](../LICENSE), declared in `pyproject.toml` (`license = "MIT"`) and shipped in the wheel. Mermaid, bundled in `src/static/vendor/`, is MIT as well and keeps `mermaid.LICENSE` beside it; the bundle also embeds other open-source libraries with notices of their own.

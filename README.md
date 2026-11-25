@@ -75,6 +75,10 @@ Without `uv`: `pip install -r requirements.txt && python src/app.py --target …
   [translations and development](docs/GUIDE.md#translations)
 - **[PLAN.md](PLAN.md)** – design and decisions (English); **[plan_he.html](plan_he.html)** – the full plan in Hebrew.
 
+## License
+
+[MIT](LICENSE). The bundled Mermaid library (`src/static/vendor/`) is MIT licensed too and keeps its own licence file.
+
 ## Development
 
 ```bash

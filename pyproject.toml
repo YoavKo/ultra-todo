@@ -3,6 +3,8 @@ name = "ultra-todo"
 version = "0.1.0"
 description = "Local-first GitOps task manager (Flask) with Hebrew/English support"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "flask>=3.1.3",
     "flask-babel>=4.0.0",
