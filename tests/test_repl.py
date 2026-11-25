@@ -144,3 +144,139 @@ def test_repl_entry_via_run(repo, db_path, monkeypatch, capsys):
     monkeypatch.setattr("builtins.input", lambda prompt="": (_ for _ in ()).throw(EOFError()))
     cli.run([str(repo), "repl"], "utd", db_path=db_path, registry=repo.parent / "repos.json")
     assert capsys.readouterr().out.strip() == ""  # Ctrl-D leaves quietly (no tty: no banner)
+
+
+def prompts_session(repo, db_path, lines, capsys):
+    """Like run_session, but also returns the prompts that were shown."""
+    it, shown = iter(lines), []
+
+    def fake_input(prompt):
+        shown.append(prompt)
+        try:
+            return next(it)
+        except StopIteration:
+            raise EOFError
+    repl.run_repl(str(repo), "utd", db_path=db_path, registry=repo.parent / "repos.json",
+                  input_fn=fake_input, interactive=False)
+    return shown, capsys.readouterr()
+
+
+@pytest.fixture
+def psession(repo, db_path, capsys, monkeypatch):
+    write_task(repo, "TKT-101", title="Login bug", priority="high")
+    write_task(repo, "TKT-102", title="Settings")
+    commit_all(repo)
+    monkeypatch.setenv("COLUMNS", "100")
+    return lambda *lines: prompts_session(repo, db_path, list(lines), capsys)
+
+
+def test_prompt_and_current_ticket(psession):
+    shown, r = psession("cd tkt-101", "show", "start", "priority low", "title Renamed here", "cd ..", "TKT-101",
+                        "cd 102", "done", "cd", "ls --ids")
+    assert shown[:2] == ["proj> ", "proj/TKT-101> "]            # the prompt names the ticket
+    assert "proj/TKT-102> " in shown and shown[-2:] == ["proj> ", "proj> "]
+    assert "TKT-101  Login bug" in r.out                        # show without an id: the current ticket
+    assert "TKT-101: to do → in progress" in r.out
+    assert "priority high → low" in r.out and "title → Renamed here" in r.out  # bare actions hit the current ticket
+    assert "TKT-102: to do → done" in r.out                     # `cd 102` takes a bare number
+    assert r.out.split()[-2:] == ["TKT-102", "TKT-101"]         # back at the repo: ls works again (101 is now low)
+
+
+def test_current_ticket_errors_and_other_tickets(psession):
+    shown, r = psession("show", "cd nope", "cd 101", "TKT-102 start", "show TKT-102", "cd a b", "info", "show --json")
+    assert "no ticket selected" in r.err and "no ticket 'nope'" in r.err and "usage: cd" in r.err
+    assert "TKT-102: to do → in progress" in r.out              # another id still works while one is current
+    assert "Settings" in r.out and '"id": "TKT-101"' in r.out  # `show --json` is about the current ticket
+    assert shown[-1] == "proj/TKT-101> "                        # errors don't change the current ticket
+
+
+def test_rm_leaves_the_current_ticket(psession):
+    shown, r = psession("cd TKT-102", "rm -y", "ls --ids")
+    assert "TKT-102: deleted" in r.out and "TKT-102 no longer exists" in r.err
+    assert shown[-1] == "proj> "                                # back to the repo prompt
+    assert r.out.strip().endswith("TKT-101")
+
+
+def test_use_resets_the_current_ticket(psession, tmp_path):
+    from conftest import init_repo
+    other = init_repo(tmp_path / "other")
+    write_task(other, "OTH-1", title="x")
+    commit_all(other)
+    shown, r = psession("cd TKT-101", f"use {other}", "ls --ids")
+    assert shown[-1] == "other> " and "OTH-1" in r.out
+
+
+@pytest.mark.parametrize("word", ["exit", "quit", "q"])
+def test_quit_words_leave(psession, word):
+    shown, r = psession(word, "ls")  # nothing after it runs
+    assert shown == ["proj> "] and r.out == ""
+
+
+def test_q_still_leaves_inside_a_ticket(psession):
+    shown, r = psession("cd TKT-101", "q", "ls")
+    assert shown == ["proj> ", "proj/TKT-101> "]
+
+
+def test_completion_for_the_current_ticket(eng):
+    cur = "TKT-101"
+    def c(line):
+        words = line.split(" ")
+        return repl.complete(eng, words[:-1], words[-1], current=cur)
+    assert "done" in c("") and "TKT-102" in c("") and "cd" in c("") and "ls" in c("")  # actions + commands + ids
+    assert c("-") == sorted(repl.TICKET_FLAGS)
+    assert c("sta") == ["start", "status"]
+    assert c("priority ") == ["high", "low", "medium"]
+    assert c("blocked ") == ["ABC-7", "TKT-102"]                # never the current ticket itself
+    assert c("open ") == ["1", "2", "3", "log.txt", "note.md", "shot.png"]
+    assert c("cd ") == ["..", "ABC-7", "TKT-101", "TKT-102"]
+    assert c("cd T") == ["TKT-101", "TKT-102"] and c("show ") == ["ABC-7", "TKT-101", "TKT-102"]
+    assert c("ls --sort ") == sorted(cli.SORT_FIELDS) and "3d" in c("ls --since ")
+    assert "--blocked" in c("ls --b") and "--csv" in c("ls --c") and "--md" in c("board --")
+    assert repl.complete(eng, ["q"], "") == []                  # nothing after a quit word
+
+
+def test_completion_for_tag_assign_title_rm(eng):
+    def c(line, current=None):
+        words = line.split(" ")
+        return repl.complete(eng, words[:-1], words[-1], current=current)
+    assert c("TKT-101 tag +") == ["+auth", "+backend", "+ui"]
+    assert c("TKT-101 tag -") == ["-auth", "-backend"]          # only this ticket's tags can be removed
+    assert c("TKT-101 tag +ui -a") == ["-auth"]
+    assert "me" in c("TKT-101 assign ") and "alice" in c("TKT-101 assign ")
+    assert c("TKT-101 assign alice ") == [] and c("TKT-101 title ") == []
+    assert c("TKT-101 rm ") == ["--yes", "-y"] and c("TKT-101 rm -") == ["--yes", "-y"]
+
+
+def test_help_mentions_the_new_things(psession):
+    shown, r = psession("help")
+    for word in ("cd ID", "show [ID]", "exit | quit | q", "--blocked", "--since", "deps", "rm [-y]"):
+        assert word in r.out
+
+
+def test_utd_alone_opens_the_repl_inside_a_repo(repo, monkeypatch, capsys, tmp_path):
+    import app
+    write_task(repo, "TKT-101", title="x")
+    commit_all(repo)
+    called = []
+    monkeypatch.setenv("ULTRA_TODO_PROG", "utd")
+    monkeypatch.setattr("repl.run_repl", lambda path, p, **kw: called.append(path))
+    monkeypatch.chdir(repo)
+    app.main([])
+    assert [str(__import__("pathlib").Path(c).resolve()) for c in called] == [str(repo)]
+    monkeypatch.chdir(repo / ".todo")  # a subdirectory of the repo counts too
+    called.clear()
+    app.main([])
+    assert len(called) == 1
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    monkeypatch.chdir(plain)  # not a repo: help, not the repl
+    called.clear()
+    with pytest.raises(SystemExit) as e:
+        app.main([])
+    assert e.value.code == 0 and not called and "commands:" in capsys.readouterr().out
+    from conftest import init_repo
+    empty = init_repo(tmp_path / "notodo")  # a repo without .todo/tasks: help too
+    monkeypatch.chdir(empty)
+    with pytest.raises(SystemExit):
+        app.main([])
+    assert not called

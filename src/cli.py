@@ -23,7 +23,7 @@ from pathlib import Path
 
 import repos
 from engine import (DESCRIPTION, PRIORITIES, STATUSES, Engine, EngineError, NotFound, SyncError,
-                    ValidationError, clean_task, fold, load_file, normalize_tag, run_git)
+                    ValidationError, clean_task, fold, git_root, load_file, normalize_tag, run_git)
 
 # first words that are not a REPO (handled by app.main)
 COMMANDS = ("ls", "open", "forget")
@@ -132,6 +132,12 @@ def find_ticket(engine: Engine, spec: str) -> str:
         fail(f"{spec!r} matches several tickets: {', '.join(sorted(hits))}")
     fail(f"no ticket {spec!r} in {Path(engine.project).name}"
          + (f" (e.g. {sorted(ids)[0]})" if ids else " (it has no tickets yet)"))
+
+
+def cwd_todo_repo() -> bool:
+    """Is the current directory inside a git repo that has a .todo/tasks directory?"""
+    root = git_root(Path.cwd())
+    return bool(root and (root / ".todo" / "tasks").is_dir())
 
 
 def open_engine(path: str, db_path=None) -> Engine:

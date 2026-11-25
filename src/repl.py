@@ -17,14 +17,18 @@ import cli
 import repos
 from engine import PRIORITIES, Engine, EngineError
 
-COMMANDS = ["info", "ls", "board", "next", "new", "pull", "save", "migrate", "use", "help", "exit", "quit"]
-TICKET_ACTIONS = ["edit", "comment", "status", "start", "done", "reopen", "priority", "attach",
-                  "detach", "open", "blocked", "block-by", "remove"]
+COMMANDS = ["info", "ls", "board", "next", "new", "pull", "save", "migrate", "use", "cd", "show",
+            "help", "exit", "quit", "q"]
+TICKET_ACTIONS = ["edit", "comment", "title", "assign", "tag", "rm", "delete", "deps", "status", "start",
+                  "done", "reopen", "priority", "attach", "detach", "open", "blocked", "block-by", "remove"]
+RAW_ACTIONS = ("title", "assign", "tag", "rm", "delete")
+SINCE_HINTS = ["1h", "6h", "1d", "3d", "1w", "2w"]
 TICKET_FLAGS = ["-e", "-c", "-m", "-f", "-s", "-p", "-a", "-d", "-o", "--path", "-b", "-bb", "-rb",
                 "-rbb", "--json", "-h"]
 FILTER_FLAGS = ["--status", "--priority", "--assignee", "-t", "--tag", "--any", "-q", "--query",
-                "--open", "--mine", "--json", "-h"]
-FLAGS = {"ls": FILTER_FLAGS, "board": FILTER_FLAGS, "next": FILTER_FLAGS + ["-n"],
+                "--open", "--mine", "--blocked", "--since", "-h"]
+FLAGS = {"ls": FILTER_FLAGS + ["--sort", "-r", "--reverse", "--json", "--csv", "--md"],
+         "board": FILTER_FLAGS + ["--md"], "next": FILTER_FLAGS + ["-n", "--json"],
          "new": ["-p", "--priority", "-a", "--assignee", "-t", "--tag", "-d", "--description",
                  "--status", "--id", "--attach", "-h"],
          "pull": ["--rebase", "-h"], "save": ["-m", "--message", "--set-upstream", "-h"],
@@ -36,16 +40,21 @@ DEP_FLAGS = {"-b", "-bb", "-rb", "-rbb", "--blocked", "--block-by", "--remove-bl
 HELP = """commands (type them without the repo name; Tab completes):
   info                       project info
   ls | board | next          tickets as a table / kanban board / what to work on (filters: --status
-                             --priority --assignee -t TAG -q TEXT --open --mine)
+                             --priority --assignee -t TAG -q TEXT --open --mine --blocked --since 3d;
+                             ls: --sort FIELD -r, --csv --md --json; board: --md)
   new [TITLE] [flags]        create a ticket (-p -a -t -d --status --attach)
   pull | save                Update / Save work (save -m MSG; --set-upstream)
   migrate                    move tickets to the <id>/main.json5 layout
-  ID                         show a ticket; then: edit, comment (-m TEXT -f FILES), status VALUE,
-                             start | done | reopen, priority VALUE, attach FILES, detach SPECS,
-                             open [SPECS], blocked IDS, block-by IDS, remove blocked|block-by IDS
+  ID                         show a ticket; then: edit, comment (-m TEXT -f FILES), title TEXT,
+                             assign NAME, tag +A -B, status VALUE, start | done | reopen, priority VALUE,
+                             attach FILES, detach SPECS, open [SPECS], deps, blocked IDS, block-by IDS,
+                             remove blocked|block-by IDS, rm [-y]
+  cd ID                      make a ticket current: the prompt shows it and the actions above work
+                             without the ID (`done`, `comment -m hi`, `open 2`); `cd` or `cd ..` goes back
+  show [ID]                  show the current (or the given) ticket
   use REPO                   switch to another repo (path, name or number)
   help                       this text
-  exit | quit | Ctrl-D       leave
+  exit | quit | q | Ctrl-D   leave
 Any command accepts -h for its own help."""
 
 
@@ -69,21 +78,34 @@ def ticket_ids(engine: Engine) -> list[str]:
                                             (engine.project,))]
 
 
-def complete(engine: Engine, words: list[str], cur: str, registry=None, db_path=None) -> list[str]:
-    """Completions for `cur` given the words already typed on the line."""
+def complete(engine: Engine, words: list[str], cur: str, registry=None, db_path=None,
+             current: str | None = None) -> list[str]:
+    """Completions for `cur` given the words already typed on the line. `current` is the
+    ticket selected with `cd`: its actions can then be typed without the id."""
     def pick(options) -> list[str]:
         return sorted({o for o in options if o.startswith(cur)})
 
     ids = ticket_ids(engine)
+    if current and current in ids:
+        if not words:
+            return pick(TICKET_FLAGS) if cur.startswith("-") else pick(COMMANDS + ids + TICKET_ACTIONS)
+        if words[0] in TICKET_ACTIONS or words[0].startswith("-"):
+            words = [current] + words
     first = words[0] if words else None
     prev = words[-1] if words else None
     if first is None:
         return pick(COMMANDS + ids)
+    if first in ("cd", "show"):
+        return pick(ids + ([".."] if first == "cd" else [])) if len(words) == 1 else []
     if first == "use":
         return pick(r["name"] for r in repos.known(registry, db_path) if r["exists"])
     if first in FLAGS:  # ls, board, next, new, pull, save, ...
         if prev in ("--status",):
             return pick(STATUSES)
+        if prev == "--sort":
+            return pick(cli.SORT_FIELDS)
+        if prev == "--since":
+            return pick(SINCE_HINTS)
         if prev in ("--priority", "-p") :
             return pick(PRIORITIES)
         if prev in ("-t", "--tag"):
@@ -100,6 +122,14 @@ def complete(engine: Engine, words: list[str], cur: str, registry=None, db_path=
     if match is None:
         return []
     rest = words[1:]
+    if rest and rest[0] in RAW_ACTIONS:  # the words after these are free text, tag changes or -y
+        if rest[0] == "tag":
+            mine = engine.get_task(match)["tags"]
+            known = [t["tag"] for t in engine.all_tags()]
+            return pick(["+" + t for t in known] + ["-" + t for t in mine] + ([] if cur[:1] in "+-" and cur else known))
+        if rest[0] == "assign":
+            return pick(engine.assignees() + ["me", "-"]) if len(rest) == 1 else []
+        return pick(["-y", "--yes"]) if rest[0] in ("rm", "delete") else []
     if prev in ("status", "-s", "--status"):
         return pick(STATUSES)
     if prev in ("priority", "-p", "--priority"):
@@ -172,16 +202,18 @@ def run_repl(path: str, p: str, db_path=None, registry=None, input_fn=None,
              interactive: bool | None = None) -> None:
     input_fn = input_fn or input
     engine = cli.open_engine(path, db_path)
+    current: str | None = None  # the ticket selected with `cd`
     interactive = sys.stdin.isatty() if interactive is None else interactive
     save_history = setup_readline(
-        lambda words, cur: complete(engine, words, cur, registry, db_path)) if interactive else None
+        lambda words, cur: complete(engine, words, cur, registry, db_path, current)) if interactive else None
     if interactive:
         print(f"{Path(engine.project).name}: type help for commands, Tab completes, "
               "exit or Ctrl-D to leave")
     try:
         while True:
+            name = Path(engine.project).name + (f"/{current}" if current else "")
             try:
-                line = input_fn(f"{Path(engine.project).name}> ")
+                line = input_fn(f"{name}> ")
             except EOFError:
                 print()
                 break
@@ -214,11 +246,31 @@ def run_repl(path: str, p: str, db_path=None, registry=None, input_fn=None,
                     continue
                 try:
                     engine = cli.open_engine(cli.resolve_repo(words[1], db_path, registry), db_path)
-                except (EngineError, SystemExit) as e:
-                    print(e.code if isinstance(e, SystemExit) else f"error: {e}", file=sys.stderr)
+                    current = None
+                except SystemExit as e:
+                    print(e.code if isinstance(e.code, str) else "error: cannot open that repo", file=sys.stderr)
+                except EngineError as e:
+                    print(f"error: {e}", file=sys.stderr)
                 continue
             try:
                 engine.refresh()
+                if cmd == "cd":
+                    if len(words) > 2:
+                        print("usage: cd [TICKET | ..]", file=sys.stderr)
+                    elif len(words) == 1 or words[1] in ("..", "/"):
+                        current = None
+                    else:
+                        current = cli.find_ticket(engine, words[1])
+                    continue
+                if cmd == "show":
+                    args = words[1:]
+                    tid = args.pop(0) if args and not args[0].startswith("-") else current
+                    if not tid:
+                        print("no ticket selected: cd TKT-101, or show TKT-101", file=sys.stderr)
+                        continue
+                    words = [tid, *args]
+                elif current and (cmd in TICKET_ACTIONS or cmd.startswith("-")):
+                    words = [current, *words]  # an action on the current ticket
                 cli.dispatch(engine, words, p)
             except SystemExit as e:  # fail() and argparse exit; the prompt carries on
                 if isinstance(e.code, str):
@@ -227,6 +279,14 @@ def run_repl(path: str, p: str, db_path=None, registry=None, input_fn=None,
                 print()
             except (EngineError, PermissionError, OSError) as e:
                 print(f"error: {e}", file=sys.stderr)
+            if current:  # it may be gone now (rm, or removed from outside)
+                try:
+                    engine.refresh()
+                    if current not in ticket_ids(engine):
+                        print(f"{current} no longer exists; back to the repo", file=sys.stderr)
+                        current = None
+                except EngineError:
+                    pass
     finally:
         if save_history:
             save_history()

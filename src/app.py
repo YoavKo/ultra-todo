@@ -432,18 +432,21 @@ def commands_help() -> str:
     p = prog()
     utd = p == "utd"
     rows = [(f"{p} REPO", "project info: branch, sync state, ticket counts"),
-            (f"{p} REPO ls", "list the tickets as a table"),
-            (f"{p} REPO board", "the kanban board in the terminal"),
+            (f"{p} REPO ls", "tickets as a table (filters, --sort, --csv, --md, --json)"),
+            (f"{p} REPO board", "the kanban board in the terminal (--md for markdown)"),
             (f"{p} REPO next", "what to work on: open, unblocked tickets by priority"),
-            (f"{p} REPO new [TITLE] [flags]", "create a ticket (-p -a -t -d --status)"),
+            (f"{p} REPO new [TITLE] [flags]", "create a ticket (-p -a -t -d --status --attach)"),
             (f"{p} REPO pull | save", "Update / Save work: pull, or commit .todo/ and push"),
             (f"{p} REPO migrate", "move tickets from the old ID.json5 layout to ID/main.json5"),
             (f"{p} REPO repl", "interactive prompt with Tab completion"),
             (f"{p} REPO ID", "show a ticket"),
+            (f"{p} REPO ID deps", "the blocker tree: what blocks it, and what it blocks"),
             (f"{p} REPO ID status|-s VALUE", "todo | doing | done | blocked (also: start, done, reopen)"),
+            (f"{p} REPO ID title|assign|tag|rm", "rename, set the assignee, add/remove tags (+A -B), delete"),
             (f"{p} REPO ID edit|-e", "open the ticket file in $EDITOR"),
-            (f"{p} REPO ID comment|-c", "add a comment (-m TEXT, or $EDITOR / stdin)"),
+            (f"{p} REPO ID comment|-c", "add a comment (-m TEXT, -f FILES, or $EDITOR / stdin)"),
             (f"{p} REPO ID priority|-p VALUE", "set the priority: high, medium or low"),
+            (f"{p} REPO ID attach|detach|open", "files of the ticket: attach, remove, open (by number or name)"),
             (f"{p} REPO ID blocked|-b IDS", "this ticket blocks IDS (remove: -rb)"),
             (f"{p} REPO ID block-by|-bb IDS", "this ticket is blocked by IDS (remove: -rbb)"),
             (f"{p} REPO serve [flags]" if utd else f"{p} --target PATH [flags]",
@@ -453,6 +456,7 @@ def commands_help() -> str:
             (f"{p} forget NAME|NUMBER,...", "remove repos from the list (files untouched)")]
     width = max(len(c) for c, _ in rows)
     return ("commands:\n" + "\n".join(f"  • {c:<{width}}  {d}" for c, d in rows)
+            + ("\n\nutd with no arguments, inside a repo that has tickets, opens the repl." if utd else "")
             + f"\n\nREPO is . (the current repo), a path, or a known repo's name or {p} ls number."
             + f"\nTab completes names and ticket ids; {p} REPO ls -h, board -h, ID -h for details.")
 
@@ -544,6 +548,8 @@ def main(argv=None) -> None:
         return cmd_ls(argv[1:])
     if argv[:1] == ["forget"]:
         return cmd_forget(argv[1:])
+    if not argv and prog() == "utd" and cli.cwd_todo_repo():
+        argv = [".", "repl"]  # `utd` alone inside a repo with tickets: the interactive prompt
     if argv and not argv[0].startswith("-") and argv[0] not in cli.COMMANDS:
         argv = cli.run(argv, prog())
         if argv is None:

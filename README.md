@@ -103,11 +103,15 @@ Everything below works as `utd …` (the shell shortcut, next section) or `ultra
 `REPO` is `.` (the repo you are in), a path, or the name or `ls` number of a known repo.
 
 ```bash
+utd                           # inside a repo with tickets: opens the interactive prompt (see Interactive mode)
 utd .                         # project info: branch, sync state, ticket counts
-utd . ls                      # tickets as a table; filters: --status --priority --assignee -t TAG --any -q TEXT --open --mine
+utd . ls                      # tickets as a table; filters: --status --priority --assignee -t TAG --any -q TEXT --open --mine --blocked --since 3d
+utd . ls --sort updated -r    # --sort priority|id|status|title|assignee|comments|updated, -r reverses
+utd . ls --open --csv         # export: --csv, --md (markdown table), --json; `board --md` for a markdown board
 utd . board                   # the kanban board (columns stack on a narrow terminal)
 utd . next                    # what to work on: open, unblocked, highest priority first
 utd . TKT-101                 # show a ticket (case-insensitive; a bare 101 works too)
+utd . TKT-104 deps            # the blocker tree: what blocks it, and what it blocks, transitively
 utd my-repo ls --status todo  # by known repo name (or number)
 utd . serve --port 9000       # serve the web UI (what `utd` alone used to do)
 utd . repl                    # interactive prompt: the same commands without the repo name, with Tab completion
@@ -121,6 +125,10 @@ Change tickets (every change is a file edit under `.todo/`, nothing is committed
 utd . new "Fix login" -p high -a alice -t backend -t auth -d "details"   # prints the new id; no title opens $EDITOR
 utd . TKT-101 start | done | reopen      # or: status doing|done|todo|blocked, or -s doing
 utd . TKT-101 priority high              # or -p high (h, m, l work too)
+utd . TKT-101 title Fix the login redirect   # rename: the rest of the line is the title (no quotes needed)
+utd . TKT-101 assign alice               # or: me (your git user), - to clear
+utd . TKT-101 tag +ui +api -old          # add and remove tags (a plain word adds)
+utd . TKT-101 rm [-y]                    # delete the ticket, with its comments and attachments; asks first on a terminal
 utd . TKT-101 edit                       # or -e: open the ticket file in $VISUAL / $EDITOR; validated on exit
 utd . TKT-101 comment -m "text"          # or -c; without -m: $EDITOR, or stdin (echo hi | utd . TKT-101 -c)
 utd . TKT-101 -c -m "see logs" -f a.log b.png   # a comment with files (-f); without -m, files only
@@ -145,6 +153,8 @@ utd . save [-m "message"] [--set-upstream]   # Save work: commit only .todo/, th
 
 Details:
 - `ls`, `board`, `next` and the ticket view take `--json` (the info command too) for scripts; `ls --ids` prints just the ids.
+- `--blocked` lists tickets that cannot be worked on: status blocked, or any unfinished blocker. `--since` takes `90m`, `12h`, `3d`, `2w` or a date (`2026-11-01`) and uses git history (the file time for uncommitted edits), counting comments too.
+- `--csv` joins tags and ids with `;`; `--md` escapes `|`; `--csv`, `--md` and `--json` exclude each other.
 - `--mine` matches the assignee against `git config user.name` (or the part of `user.email` before the `@`).
 - Dependency changes refuse cycles and self-links (exit code 1, nothing written). A `remove block-by` also works on ids that no longer exist.
 - `save` commits whatever changed under `.todo/` and then pushes; if the branch has no upstream it has already committed and tells you to rerun with `--set-upstream`. `pull` stops cleanly on conflicts, like the app.
@@ -158,17 +168,23 @@ Details:
 
 ### Interactive mode (REPL)
 
-`utd . repl` opens a prompt for one repo. Type the same commands as after `utd REPO` (`ls`, `board`, `next`,
-`new …`, `pull`, `save`, `TKT-101 done`, `TKT-101 comment -m …`, …); the index stays open between commands, so
-they are quick, and an error never ends the session. `help` lists the commands, `use REPO` switches repo,
-`exit` / `quit` / Ctrl-D leaves. History is kept in `repl_history` in the user data dir.
+`utd . repl` — or just `utd` when you are inside a repo that has tickets — opens a prompt for one repo. The prompt
+is the repo name (`my-repo> `). Type the same commands as after `utd REPO` (`ls`, `board`, `next`, `new …`, `pull`,
+`save`, `TKT-101 done`, `TKT-101 comment -m …`, …); the index stays open between commands, so they are quick, and
+an error never ends the session.
+
+- `cd TKT-104` makes a ticket **current**: the prompt becomes `my-repo/TKT-104> ` and its actions need no id
+  (`done`, `comment -m hi`, `tag +ui`, `open 2`, `deps`, `show`). `cd` or `cd ..` goes back; another ticket's id
+  still works while one is current; if the ticket is deleted the prompt returns to the repo by itself.
+- `show [ID]` shows the current (or the given) ticket, `use REPO` switches repo, `help` lists everything.
+- `q`, `quit`, `exit` or Ctrl-D leaves. History is kept in `repl_history` in the user data dir.
 
 ![REPL with Tab completion](docs/screenshots/cli-repl.png)
 
 Tab completes (one Tab lists the options when there are several):
-- commands and ticket ids at the start of a line, repo names after `use`;
-- per command: its flags, the values for `--status` / `--priority` / `-p` / `-s`, existing tags after `-t`, assignees after `--assignee` / `-a`;
-- after a ticket id: the actions (`edit`, `comment`, `status`, `start`, …), values for `status` and `priority`, other ticket ids after `blocked` / `block-by` / `remove …` (never the ticket itself or ones already given), file names after `attach` / `-f` / `--attach`, and that ticket's attachments (numbers and names) after `open` / `detach`.
+- commands and ticket ids at the start of a line (plus the ticket actions while one is current), ticket ids after `cd` / `show`, repo names after `use`;
+- per command: its flags, the values for `--status` / `--priority` / `-p` / `-s` / `--sort` / `--since`, existing tags after `-t`, assignees after `--assignee` / `-a`;
+- after a ticket id: the actions (`edit`, `comment`, `status`, `start`, …), values for `status` and `priority`, other ticket ids after `blocked` / `block-by` / `remove …` (never the ticket itself or ones already given), file names after `attach` / `-f` / `--attach`, that ticket's attachments (numbers and names) after `open` / `detach`, tags after `tag` (`+` for any tag, `-` for this ticket's own), and assignees (and `me`) after `assign`.
 
 Completion needs Python's `readline` (Linux and macOS have it; on Windows the prompt works without Tab). `serve` is not available inside the REPL; run it from the shell.
 
@@ -183,7 +199,7 @@ source /path/to/ultra-todo/shell/utd.bash
 
 (If you pasted the old `utd` function there, replace it with this line.) It needs `uv` on the `PATH`.
 
-`utd -h` lists every command with its flags.
+`utd -h` lists every command with its flags; `utd` alone, inside a repo with tickets, opens the REPL.
 
 Tab completion covers the commands, repo names and directories, then per repo: the actions, ticket ids
 (`utd . TK<Tab>`), values after `status` / `priority` / `-p` / `-s`, ids after `blocked` / `block-by` /

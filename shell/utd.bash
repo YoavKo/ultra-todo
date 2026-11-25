@@ -17,12 +17,14 @@ _utd() {
     local first="${COMP_WORDS[1]}" second="${COMP_WORDS[2]}"
     local statuses="todo doing done blocked" prios="high medium low"
     local serve_flags="--lang --host --port --auto-commit --author --max-attachment-mb --db --threads --debug -h --help"
-    local filter_flags="--status --priority --assignee -t --tag --any -q --query --open --mine -h --help"
+    local filter_flags="--status --priority --assignee -t --tag --any -q --query --open --mine --blocked --since -h --help"
     case "$prev" in
         --lang) COMPREPLY=($(compgen -W "en he" -- "$cur")); return ;;
         --db) compopt -o filenames; COMPREPLY=($(compgen -f -- "$cur")); return ;;
         --host|--port|--author|--max-attachment-mb|--threads|--assignee|-q|--query|-t|--tag|-m|--message|-a|-d|--description|--id) return ;;
         --status) COMPREPLY=($(compgen -W "$statuses" -- "$cur")); return ;;
+        --sort) COMPREPLY=($(compgen -W "priority id status title assignee comments updated" -- "$cur")); return ;;
+        --since) COMPREPLY=($(compgen -W "1h 6h 1d 3d 1w 2w" -- "$cur")); return ;;
         -s) COMPREPLY=($(compgen -W "$statuses" -- "$cur")); return ;;
         --priority|-p) COMPREPLY=($(compgen -W "$prios" -- "$cur")); return ;;
     esac
@@ -50,7 +52,8 @@ _utd() {
         COMPREPLY=($(compgen -W "ls board next new pull save migrate repl serve $(ids)" -- "$cur")); return
     fi
     case "$second" in
-        ls|board) COMPREPLY=($(compgen -W "$filter_flags --json" -- "$cur")) ;;
+        ls) COMPREPLY=($(compgen -W "$filter_flags --sort -r --reverse --json --csv --md" -- "$cur")) ;;
+        board) COMPREPLY=($(compgen -W "$filter_flags --md" -- "$cur")) ;;
         next) COMPREPLY=($(compgen -W "$filter_flags -n --json" -- "$cur")) ;;
         new) COMPREPLY=($(compgen -W "-p --priority -a --assignee -t --tag -d --description --status --id --attach -h" -- "$cur")) ;;
         repl) COMPREPLY=($(compgen -W "-h" -- "$cur")) ;;
@@ -68,7 +71,7 @@ _utd() {
                 attach|--attach|-f|--file) compopt -o filenames 2>/dev/null; COMPREPLY=($(compgen -f -- "$cur")); return ;;
             esac
             if [ "$COMP_CWORD" -eq 3 ] && [[ "$cur" != -* ]]; then
-                COMPREPLY=($(compgen -W "edit comment status start done reopen priority attach detach open blocked block-by remove" -- "$cur"))
+                COMPREPLY=($(compgen -W "edit comment title assign tag rm deps status start done reopen priority attach detach open blocked block-by remove" -- "$cur"))
             else
                 COMPREPLY=($(compgen -W "-e -c -m -f -s -p -a -d -o --path -b -bb -rb -rbb --json -h" -- "$cur"))
             fi ;;
