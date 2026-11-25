@@ -449,10 +449,11 @@ def commands_help() -> str:
             (f"{p} REPO ID attach|detach|open", "files of the ticket: attach, remove, open (by number or name)"),
             (f"{p} REPO ID blocked|-b IDS", "this ticket blocks IDS (remove: -rb)"),
             (f"{p} REPO ID block-by|-bb IDS", "this ticket is blocked by IDS (remove: -rbb)"),
+            (f"{p} REPO open [flags]", "serve the repo and open the web UI in your browser"),
             (f"{p} REPO serve [flags]" if utd else f"{p} --target PATH [flags]",
-             "serve a repo in the browser"),
+             "serve a repo without opening a browser (--browser to open it)"),
             (f"{p} ls", "list known repos: number, last opened, [open, done], name, path"),
-            (f"{p} open NAME|NUMBER [flags]", "serve a known repo by name or ls number"),
+            (f"{p} open [REPO] [flags]", "serve a repo (name, number, path, . or the current one) and open the browser"),
             (f"{p} forget NAME|NUMBER,...", "remove repos from the list (files untouched)")]
     width = max(len(c) for c, _ in rows)
     return ("commands:\n" + "\n".join(f"  • {c:<{width}}  {d}" for c, d in rows)
@@ -530,17 +531,47 @@ def cmd_forget(argv: list[str]) -> None:
 def open_parser() -> argparse.ArgumentParser:
     p = prog()
     ap = argparse.ArgumentParser(
-        prog=f"{p} open", usage=f"{p} open [-h] NAME|NUMBER [flags]",
+        prog=f"{p} open", usage=f"{p} open [-h] [REPO] [flags]",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description=f"Serve a known repo by name, without typing its path.",
+        description="Serve a repo and open the web UI in your browser. REPO is a known repo's name or\n"
+                    "ls number, a path, or . ; without it, the repo you are in.",
         epilog="examples:\n"
+               f"  • {p} open                      the repo you are in\n"
+               f"  • {p} open .                    the same, explicitly\n"
                f"  • {p} open my-repo              by name (case-insensitive; Tab completes)\n"
                f"  • {p} open 1                    by ls number (1 = most recently opened)\n"
-               f"  • {p} open my-repo --lang he --port 9000\n"
-               f"\nflags are the same as for serving a path: see {p} -h\n"
-               f"If two repos share a name, use the number or {serve_hint()}.")
-    ap.add_argument("repo", metavar="NAME|NUMBER", help=f"a repo name or number from {p} ls")
+               f"  • {p} open my-repo --lang he --port 9000 --no-browser\n"
+               f"\nflags are the same as for serving a path: see {p} -h (--no-browser keeps the browser closed)\n"
+               f"If two repos share a name, use the number or a path.")
+    ap.add_argument("repo", metavar="REPO", nargs="?", help=f"a repo name or number from {p} ls, a path, or .")
     return ap
+
+
+def open_args(argv: list[str]) -> list[str]:
+    """`open [REPO] [flags]` -> the serve arguments, with --browser unless --no-browser is given."""
+    rest = argv[1:]
+    spec = rest[0] if rest and not rest[0].startswith("-") else None
+    flags = rest[1:] if spec else rest
+    if spec is None:
+        if not cli.cwd_todo_repo():
+            raise SystemExit(f"error: not inside a repo with tickets; say which one: {prog()} open NAME|NUMBER|PATH")
+        spec = "."
+    try:
+        path = cli.resolve_repo(spec)
+    except EngineError as e:
+        raise SystemExit(f"error: {e}")
+    if "--no-browser" not in flags and "--browser" not in flags:
+        flags = ["--browser", *flags]
+    return ["--target", path, *flags]
+
+
+def open_browser(url: str) -> None:
+    import webbrowser
+    try:
+        if not webbrowser.open(url):
+            log.warning("could not start a browser; open %s yourself", url)
+    except Exception as e:  # a missing or broken browser must never stop the server
+        log.warning("could not start a browser (%s); open %s yourself", e, url)
 
 
 def main(argv=None) -> None:
@@ -558,18 +589,13 @@ def main(argv=None) -> None:
     if argv[:1] == ["open"]:
         if {"-h", "--help"} & set(argv[1:]):
             return open_parser().print_help()
-        if len(argv) < 2 or argv[1].startswith("-"):
-            open_parser().error("NAME|NUMBER is required")
-        try:
-            argv = ["--target", repos.resolve(argv[1])] + argv[2:]
-        except EngineError as e:
-            raise SystemExit(f"error: {e}")
+        argv = open_args(argv)
     utd = prog() == "utd"
     if utd and not argv:
         argv = ["-h"]
     ap = argparse.ArgumentParser(
         prog=prog(), description="Local GitOps task manager",
-        usage="utd [REPO [ls | board | next | new | pull | save | migrate | repl | serve | ID [action]] | ls | open NAME|NUMBER | forget NAME|NUMBER,...] [flags]" if utd else None,
+        usage="utd [REPO [ls | board | next | new | pull | save | migrate | repl | open | serve | ID [action]] | ls | open [REPO] | forget NAME|NUMBER,...] [flags]" if utd else None,
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=commands_help())
     ap.add_argument("--target", required=not utd,
                     help=argparse.SUPPRESS if utd else "path of the git repository to manage")
@@ -583,6 +609,8 @@ def main(argv=None) -> None:
     ap.add_argument("--db", help="override the SQLite index path")
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--debug", action="store_true")
+    ap.add_argument("--browser", action="store_true", help="open the web UI in a browser once it is up")
+    ap.add_argument("--no-browser", action="store_true", help="with open: do not open the browser")
     args = ap.parse_args(argv)
     if args.target is None:
         ap.error("no command; to serve the current directory: utd . serve [flags]")
@@ -609,12 +637,19 @@ def main(argv=None) -> None:
     sock = bind_socket(args.host, args.port)
     port = sock.getsockname()[1]
     log.info("serving %s on http://%s:%d/", engine.project, args.host, port)
+    url = f"http://{'127.0.0.1' if args.host in ('0.0.0.0', '::', '') else args.host}:{port}/"
+    want_browser = args.browser and not args.no_browser
     if args.debug:
         sock.close()  # the reloader binds its own socket
+        if want_browser:
+            import threading
+            threading.Timer(1.0, open_browser, [url]).start()  # after the dev server is up
         app.run(args.host, port, debug=True)
     else:
         from waitress import serve
-        sock.listen(1024)
+        sock.listen(1024)  # connections queue from here on, so the browser may open right away
+        if want_browser:
+            open_browser(url)
         serve(app, sockets=[sock], threads=args.threads)
 
 

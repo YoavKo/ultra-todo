@@ -16,7 +16,7 @@ _utd() {
     local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
     local first="${COMP_WORDS[1]}" second="${COMP_WORDS[2]}"
     local statuses="todo doing done blocked" prios="high medium low"
-    local serve_flags="--lang --host --port --auto-commit --author --max-attachment-mb --db --threads --debug -h --help"
+    local serve_flags="--lang --host --port --auto-commit --author --max-attachment-mb --db --threads --debug --browser --no-browser -h --help"
     local filter_flags="--status --priority --assignee -t --tag --any -q --query --open --mine --blocked --since -h --help"
     case "$prev" in
         --lang) COMPREPLY=($(compgen -W "en he" -- "$cur")); return ;;
@@ -37,7 +37,7 @@ _utd() {
     fi
     case "$first" in
         ls) return ;;
-        open) [ "$COMP_CWORD" -eq 2 ] && [[ "$cur" != -* ]] && COMPREPLY=($(compgen -W "$(utd ls --names 2>/dev/null)" -- "$cur")) \
+        open) [ "$COMP_CWORD" -eq 2 ] && [[ "$cur" != -* ]] && COMPREPLY=($(compgen -W ". $(utd ls --names 2>/dev/null)" -- "$cur")) \
                   || COMPREPLY=($(compgen -W "$serve_flags" -- "$cur")); return ;;
         forget)
             local pre="" name
@@ -49,7 +49,7 @@ _utd() {
     local ids
     ids() { utd "$first" ls --ids 2>/dev/null; }
     if [ "$COMP_CWORD" -eq 2 ]; then
-        COMPREPLY=($(compgen -W "ls board next new pull save migrate repl serve $(ids)" -- "$cur")); return
+        COMPREPLY=($(compgen -W "ls board next new pull save migrate repl open serve $(ids)" -- "$cur")); return
     fi
     case "$second" in
         ls|l|list) COMPREPLY=($(compgen -W "$filter_flags --sort -r --reverse --json --csv --md" -- "$cur")) ;;
@@ -60,7 +60,7 @@ _utd() {
         migrate) COMPREPLY=($(compgen -W "-h" -- "$cur")) ;;
         pull|pl) COMPREPLY=($(compgen -W "--rebase -h" -- "$cur")) ;;
         save|sv) COMPREPLY=($(compgen -W "-m --message --set-upstream -h" -- "$cur")) ;;
-        serve) COMPREPLY=($(compgen -W "$serve_flags" -- "$cur")) ;;
+        serve|open) COMPREPLY=($(compgen -W "$serve_flags" -- "$cur")) ;;
         *)  # utd REPO ID ...
             case "$prev" in
                 status|st) COMPREPLY=($(compgen -W "$statuses" -- "$cur")); return ;;

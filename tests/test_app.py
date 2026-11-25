@@ -252,3 +252,87 @@ def test_open_reports_a_missing_opener(local_client, monkeypatch):
     r = local_client.post("/task/TKT-101/open-attachment/description/log.txt",
                           headers={"X-CSRF-Token": local_client.token})
     assert r.status_code == 501 and "xdg-open" in r.get_json()["error"]
+
+
+# ---- `open`: serve a repo and open the browser ----------------------------------------------
+@pytest.fixture
+def served(repo, tmp_path, monkeypatch):
+    """Run app.main with the server and the browser stubbed out; returns what happened."""
+    import app
+    import waitress
+    write_task(repo, "TKT-101", title="x")
+    commit_all(repo)
+    seen = {"opened": [], "served": []}
+    monkeypatch.setattr(waitress, "serve", lambda a, sockets, threads: seen["served"].append(sockets[0].getsockname()))
+    monkeypatch.setattr("webbrowser.open", lambda url: seen["opened"].append(url) or True)
+    monkeypatch.setenv("ULTRA_TODO_PROG", "utd")
+
+    def run(*argv):
+        seen["opened"].clear()
+        seen["served"].clear()
+        app.main([*argv, "--db", str(tmp_path / "idx.sqlite3")])
+        return seen
+    run.repo = repo
+    return run
+
+
+def test_open_serves_and_opens_the_browser(served, repo):
+    seen = served("open", str(repo))
+    assert len(seen["served"]) == 1
+    assert seen["opened"] == [f"http://127.0.0.1:{seen['served'][0][1]}/"]
+
+
+def test_open_without_a_repo_uses_the_current_one(served, repo, monkeypatch):
+    monkeypatch.chdir(repo)
+    assert len(served("open")["opened"]) == 1
+    assert len(served("open", ".")["opened"]) == 1
+    monkeypatch.chdir(repo / ".todo")  # a subdirectory counts
+    assert len(served("open")["opened"]) == 1
+
+
+def test_open_outside_a_repo_asks_which(served, tmp_path, monkeypatch):
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    monkeypatch.chdir(plain)
+    with pytest.raises(SystemExit, match="say which one: utd open NAME"):
+        served("open")
+    with pytest.raises(SystemExit, match="not a directory"):
+        served("open", "./nope")
+    with pytest.raises(SystemExit, match="no known repo"):
+        served("open", "definitely-not-a-repo")
+
+
+def test_open_flags(served, repo):
+    assert served("open", str(repo), "--no-browser")["opened"] == []   # served, browser closed
+    assert len(served("open", str(repo), "--no-browser")["served"]) == 1
+    assert len(served("open", str(repo), "--lang", "he", "--port", "0")["opened"]) == 1
+
+
+def test_repo_open_and_serve_forms(served, repo):
+    assert len(served(str(repo), "open")["opened"]) == 1               # utd REPO open
+    assert served(str(repo), "serve")["opened"] == []                  # serve alone stays quiet
+    assert len(served(str(repo), "serve", "--browser")["opened"]) == 1  # ...unless asked
+    assert served(str(repo), "open", "--no-browser")["opened"] == []
+
+
+def test_a_browser_that_cannot_start_does_not_stop_the_server(served, monkeypatch, repo):
+    monkeypatch.setattr("webbrowser.open", lambda url: (_ for _ in ()).throw(RuntimeError("no display")))
+    assert len(served("open", str(repo))["served"]) == 1
+    monkeypatch.setattr("webbrowser.open", lambda url: False)
+    assert len(served("open", str(repo))["served"]) == 1
+
+
+def test_open_help_and_hosts(served, repo, capsys, monkeypatch):
+    import app
+    served("open", "-h")
+    assert "[REPO]" in capsys.readouterr().out
+    seen = served("open", str(repo), "--host", "0.0.0.0")  # a wildcard bind opens the loopback address
+    assert seen["opened"][0].startswith("http://127.0.0.1:")
+
+
+def test_run_returns_open_and_serve_arguments(repo, db_path):
+    import cli
+    assert cli.run([str(repo), "open", "--port", "9"], "utd", db_path=db_path) == [
+        "--target", str(repo), "--browser", "--port", "9"]
+    assert cli.run([str(repo), "serve", "--port", "9"], "utd", db_path=db_path) == [
+        "--target", str(repo), "--port", "9"]

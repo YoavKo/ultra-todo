@@ -323,3 +323,14 @@ def test_completion_understands_short_forms(eng):
     assert c("TKT-102 bb ") == ["ABC-7", "TKT-101"]
     assert c("st ", current="TKT-101") == ["blocked", "doing", "done", "todo"]
     assert c("tg +", current="TKT-101") == ["+auth", "+backend", "+ui"]
+
+
+def test_serve_and_open_are_refused_in_the_repl_but_open_works_on_a_ticket(psession, tmp_path, monkeypatch):
+    opened = []
+    monkeypatch.setattr(cli, "launch", lambda path: opened.append(path.name))
+    f = tmp_path / "a.txt"
+    f.write_text("x")
+    shown, r = psession("serve", "open", f"TKT-101 attach {f}", "cd TKT-101", "open", "q")
+    assert r.err.count("is not available here") == 2 and "run it from the shell: utd open [REPO]" in r.err
+    assert "in a ticket, open opens its files" in r.err
+    assert opened == ["a.txt"]  # inside a ticket, `open` is the attachment action

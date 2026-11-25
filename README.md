@@ -68,6 +68,9 @@ uv run ultra-todo --target /path/to/repo --lang he --port 9000 --auto-commit
 Global install: `uv tool install .` then `ultra-todo --target ...`.
 Without uv: `pip install -r requirements.txt && python src/app.py --target ...`.
 
+To open the web UI in one step: `utd open` (or `utd . open`) starts the server and opens your browser at its address
+(`--no-browser` to skip that). `utd . serve` only serves; the address is in the log (`http://127.0.0.1:8080/`).
+
 Several repos can be served at once: without `--port`, each instance takes the first free port
 from 8080 up (8080, 8081, …) and logs which repo it serves where; the browser tab shows the repo name.
 
@@ -80,8 +83,9 @@ Each command has its own help: `ultra-todo ls -h`, `ultra-todo open -h`, `ultra-
 
 ```bash
 ultra-todo ls                       # numbered list, most recently opened first
-ultra-todo open my-repo             # serve a known repo by name (case-insensitive)
-ultra-todo open 1 --lang he         # ...or by its ls number; serve flags still work
+ultra-todo open                     # the repo you are in: serve it and open the browser
+ultra-todo open my-repo             # a known repo by name (case-insensitive), ./path or .
+ultra-todo open 1 --lang he         # ...or by its ls number; serve flags still work (--no-browser: don't open it)
 ultra-todo forget 3,5               # remove repos from the list (or: forget old-repo 4)
 ```
 
@@ -113,7 +117,8 @@ utd . next                    # what to work on: open, unblocked, highest priori
 utd . TKT-101                 # show a ticket (case-insensitive; a bare 101 works too)
 utd . TKT-104 deps            # the blocker tree: what blocks it, and what it blocks, transitively
 utd my-repo ls --status todo  # by known repo name (or number)
-utd . serve --port 9000       # serve the web UI (what `utd` alone used to do)
+utd . open                    # serve the repo and open the web UI in your browser (--no-browser keeps it closed)
+utd . serve --port 9000       # serve without opening a browser (add --browser to open it)
 utd . repl                    # interactive prompt: the same commands without the repo name, with Tab completion
 ```
 
@@ -162,6 +167,7 @@ Details:
 - **Attachment numbers**: the ticket view numbers every attachment of the ticket: the description's files first, then the comments' oldest first (so a number never changes when someone comments later). `open` and `detach` take a number or a name; `OWNER/NAME` (`description/shot.png`, `COMMENT-ID/shot.png`) settles duplicate names, and a file whose name is a number wins over the index. `detach` only removes the description's files (comment files: edit the comment in the app).
 - The web UI's **Open** button does the same as `open`: the server launches the file with the desktop's default application. It only exists when the server is bound to localhost (the default) and only accepts requests from this machine (`--host 0.0.0.0` hides it), so nobody on the network can start programs on yours.
 - `open` uses `xdg-open` (Linux), `open` (macOS) or the Windows default; `--path` prints the file location instead (SSH, scripts). With one attachment no name is needed; with several it asks (on a terminal) or lists the numbers and exits.
+- `open` and `serve` are reserved words after the repo (like `ls`), so a ticket cannot be reached by those ids on the command line. `--browser` / `--no-browser` pick whether the browser is started; a missing browser only logs a warning.
 - `utd . migrate` moves tickets from the old flat `ID.json5` layout to `ID/main.json5` (see [File formats](#file-formats)); nothing is committed until `save`.
 - Per-command help: `utd . ls -h`, `board -h`, `new -h`, `next -h`, `pull -h`, `save -h`, `utd . TKT-1 -h`.
 - Breaking change: `utd` alone and `utd PATH` used to serve a repo; that is now `utd . serve` / `utd PATH serve` (`utd open NAME` and `ultra-todo --target PATH` are unchanged).

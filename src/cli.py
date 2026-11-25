@@ -1167,10 +1167,10 @@ def run(argv: list[str], p: str, db_path=None, registry=None) -> list[str] | Non
     except EngineError as e:
         fail(str(e))
     action = rest[0] if rest else None
-    if action == "serve":
-        return ["--target", path, *rest[1:]]
+    if action in ("serve", "open"):  # open also starts the browser
+        return ["--target", path, *(["--browser"] if action == "open" else []), *rest[1:]]
     if action in ("-h", "--help"):
-        print(f"usage: {p} REPO [ls | board | next | new | pull | save | migrate | repl | serve | ID [action]]\n"
+        print(f"usage: {p} REPO [ls | board | next | new | pull | save | migrate | repl | open | serve | ID [action]]\n"
               f"see {p} -h for the commands, or {p} REPO ls -h / board -h / ID -h")
         return None
     if action == "repl":

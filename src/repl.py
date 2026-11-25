@@ -244,9 +244,11 @@ def run_repl(path: str, p: str, db_path=None, registry=None, input_fn=None,
             if cmd in ("help", "h", "?"):
                 print(HELP)
                 continue
-            if cmd == "serve":
-                print("serve is not available here: run it from the shell: "
-                      f"{p} {Path(engine.project).name} serve", file=sys.stderr)
+            if cmd == "serve" or (cmd == "open" and not current):
+                print(f"{cmd} is not available here (it starts the web server): run it from the shell: "
+                      f"{p} {'open' if cmd == 'open' else Path(engine.project).name + ' serve'}"
+                      + (" [REPO]" if cmd == "open" else "") + "; in a ticket, open opens its files",
+                      file=sys.stderr)
                 continue
             if cmd == "repl":
                 print("already in the repl", file=sys.stderr)
