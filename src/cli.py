@@ -6,6 +6,7 @@ REPO is ``.`` (or any path) or the name / ``ls`` number of a known repo. Everyth
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import re
@@ -15,13 +16,14 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unicodedata
 from datetime import datetime
 from pathlib import Path
 
 import repos
 from engine import (DESCRIPTION, PRIORITIES, STATUSES, Engine, EngineError, NotFound, SyncError,
-                    ValidationError, clean_task, fold, load_file, run_git)
+                    ValidationError, clean_task, fold, load_file, normalize_tag, run_git)
 
 # first words that are not a REPO (handled by app.main)
 COMMANDS = ("ls", "open", "forget")
@@ -234,6 +236,18 @@ def status_arg(value: str) -> str:
     return STATUS_ALIASES[key]
 
 
+def since_arg(value: str) -> float:
+    """argparse type: 90m | 12h | 3d | 2w, or a date (2026-11-01 [12:30]) -> unix time."""
+    m = re.fullmatch(r"(\d+)([mhdw])", value.strip().lower())
+    if m:
+        return time.time() - int(m.group(1)) * {"m": 60, "h": 3600, "d": 86400, "w": 604800}[m.group(2)]
+    try:
+        return datetime.fromisoformat(value.strip()).timestamp()
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"invalid time {value!r}: use 90m, 12h, 3d, 2w or a date like 2026-11-01")
+
+
 def add_filters(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--status", type=status_arg, metavar="STATUS", help="todo | doing | done | blocked")
     ap.add_argument("--priority", choices=PRIORITIES)
@@ -245,6 +259,11 @@ def add_filters(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--open", action="store_true", help="hide done tickets")
     ap.add_argument("--mine", action="store_true",
                     help="only tickets assigned to you (git config user.name)")
+    ap.add_argument("--blocked", action="store_true",
+                    help="only tickets that cannot be worked on: status blocked, or an unfinished blocker")
+    ap.add_argument("--since", type=since_arg, metavar="WHEN",
+                    help="only tickets changed since: 90m, 12h, 3d, 2w or a date (uses git history, "
+                         "or the file time for uncommitted edits)")
 
 
 def me(engine: Engine) -> set[str]:
@@ -266,6 +285,13 @@ def filtered(engine: Engine, a: argparse.Namespace) -> list[dict]:
     if a.mine:
         mine = me(engine)
         tasks = [t for t in tasks if fold(t["assignee"]) in mine]
+    if a.blocked:
+        status = {t["id"]: t["status"] for t in engine.list_tasks()}
+        tasks = [t for t in tasks if t["status"] == "blocked"
+                 or any(b in status and status[b] != "done" for b in t["blocked_by"])]
+    if a.since is not None:
+        changed = engine.last_changed()
+        tasks = [t for t in tasks if changed.get(t["id"], 0) >= a.since]
     return tasks
 
 
@@ -329,6 +355,66 @@ def cmd_info(engine: Engine, argv: list[str], p: str) -> None:
                     f"run: {p} REPO migrate", "yellow"))
 
 
+SORT_FIELDS = ("priority", "id", "status", "title", "assignee", "comments", "updated")
+
+
+def natural(text: str) -> list:
+    return [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", fold(text))]
+
+
+def sort_tasks(engine: Engine, tasks: list[dict], field: str, reverse: bool) -> list[dict]:
+    changed = engine.last_changed() if field == "updated" else {}
+    keys = {
+        "priority": lambda t: (PRIORITIES.index(t["priority"]), natural(t["id"])),
+        "id": lambda t: natural(t["id"]),
+        "status": lambda t: (BOARD_ORDER.index(t["status"]), natural(t["id"])),
+        "title": lambda t: fold(t["title"]),
+        "assignee": lambda t: (not t["assignee"], fold(t["assignee"]), natural(t["id"])),
+        "comments": lambda t: (-t["comment_count"], natural(t["id"])),
+        "updated": lambda t: (-changed.get(t["id"], 0), natural(t["id"])),  # newest first
+    }
+    return sorted(tasks, key=keys[field], reverse=reverse)
+
+
+def md_cell(text: str) -> str:
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
+def tickets_csv(tasks: list[dict]) -> str:
+    import io
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(["id", "title", "status", "priority", "assignee", "tags", "blocked_by", "blocks", "comments"])
+    for t in tasks:
+        w.writerow([t["id"], t["title"], t["status"], t["priority"], t["assignee"], ";".join(t["tags"]),
+                    ";".join(t["blocked_by"]), ";".join(t["blocks"]), t["comment_count"]])
+    return buf.getvalue().rstrip("\n")
+
+
+def tickets_markdown(tasks: list[dict]) -> str:
+    rows = ["| ID | Title | Status | Priority | Assignee | Tags | Blocked by |", "|---|---|---|---|---|---|---|"]
+    for t in tasks:
+        rows.append("| " + " | ".join(md_cell(x) for x in (
+            t["id"], t["title"], STATUS_LABEL[t["status"]], t["priority"], t["assignee"] or "-",
+            " ".join("#" + x for x in t["tags"]) or "-", ", ".join(t["blocked_by"]) or "-")) + " |")
+    return "\n".join(rows)
+
+
+def board_markdown(tasks: list[dict]) -> str:
+    out = []
+    for s in BOARD_ORDER:
+        col = [t for t in tasks if t["status"] == s]
+        out.append(f"## {STATUS_LABEL[s]} ({len(col)})\n")
+        for t in col:
+            meta = " ".join(filter(None, [f"{PRIORITY_MARK[t['priority']]} {t['priority']}",
+                                          "@" + t["assignee"] if t["assignee"] else "",
+                                          *("#" + x for x in t["tags"])]))
+            extra = (f" — blocked by {', '.join(t['blocked_by'])}" if t["blocked_by"] else "")
+            out.append(f"- **{t['id']}** {t['title']} — {meta}{extra}")
+        out.append("")
+    return "\n".join(out).rstrip()
+
+
 def cmd_ls(engine: Engine, argv: list[str], p: str) -> None:
     ap = argparse.ArgumentParser(
         prog=f"{p} REPO ls", formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -336,14 +422,29 @@ def cmd_ls(engine: Engine, argv: list[str], p: str) -> None:
         epilog="examples:\n"
                f"  • {p} . ls --status todo --priority high\n"
                f"  • {p} my-repo ls -t backend -t auth        tickets with both tags\n"
+               f"  • {p} . ls --blocked --since 3d            stuck tickets that changed in the last 3 days\n"
+               f"  • {p} . ls --sort updated                  newest changes first (-r reverses any sort)\n"
+               f"  • {p} . ls --open --csv > open.csv         export: --csv, --md (a markdown table), --json\n"
                f"  • {p} 2 ls -q login --json")
     add_filters(ap)
-    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--sort", choices=SORT_FIELDS, default="priority",
+                    help="priority (default) | id | status | title | assignee | comments | updated")
+    ap.add_argument("-r", "--reverse", action="store_true", help="reverse the sort order")
+    fmt = ap.add_mutually_exclusive_group()
+    fmt.add_argument("--json", action="store_true")
+    fmt.add_argument("--csv", action="store_true", help="comma-separated values (tags and ids joined by ;)")
+    fmt.add_argument("--md", action="store_true", help="a markdown table")
     ap.add_argument("--ids", action="store_true", help=argparse.SUPPRESS)  # tab completion
     a = ap.parse_args(argv)
     tasks = filtered(engine, a)
+    if a.sort != "priority" or a.reverse:
+        tasks = sort_tasks(engine, tasks, a.sort, a.reverse)
     if a.ids:
         print("\n".join(t["id"] for t in tasks))
+    elif a.csv:
+        print(tickets_csv(tasks))
+    elif a.md:
+        print(tickets_markdown(tasks))
     elif a.json:
         print(json.dumps([public(t) for t in tasks], ensure_ascii=False, indent=2))
     elif not tasks:
@@ -361,8 +462,10 @@ def cmd_board(engine: Engine, argv: list[str], p: str) -> None:
         epilog=f"cards show: ID, priority (▲ high ● medium ▼ low), →N tickets it blocks,\n"
                f"✖N tickets blocking it, @assignee and #tags.")
     add_filters(ap)
+    ap.add_argument("--md", action="store_true", help="markdown (one list per column) instead of the cards")
     a = ap.parse_args(argv)
-    print(board_text(filtered(engine, a), term_width()))
+    tasks = filtered(engine, a)
+    print(board_markdown(tasks) if a.md else board_text(tasks, term_width()))
 
 
 def render_ticket(engine: Engine, t: dict) -> str:
@@ -638,11 +741,115 @@ def cmd_deps(engine: Engine, tid: str, kind: str, remove: bool, specs: list[str]
         print(f"{task} is {verb} blocked by {blocker}")
 
 
+def dep_tree(engine: Engine, tid: str) -> str:
+    """What blocks a ticket, and what it blocks, as trees (transitively)."""
+    tasks = {t["id"]: t for t in engine.list_tasks()}
+
+    def label(i: str) -> str:
+        t = tasks.get(i)
+        return f"{i}  {t['title']}  [{status_text(t['status'])}]" if t else f"{i}  (missing)"
+
+    def walk(i: str, key: str, prefix: str, seen: set, out: list) -> None:
+        kids = tasks[i][key] if i in tasks else []
+        for n, k in enumerate(kids):
+            last = n == len(kids) - 1
+            again = k in seen
+            out.append(prefix + ("└─ " if last else "├─ ") + label(k)
+                       + (paint("  (shown above)", "dim") if again else ""))
+            if not again and k in tasks:
+                seen.add(k)
+                walk(k, key, prefix + ("   " if last else "│  "), seen, out)
+
+    t = tasks[tid]
+    out = [f"{paint(tid, 'bold')}  {t['title']}  [{status_text(t['status'])}]"]
+    for key, title, none in (("blocked_by", "blocked by", "not blocked by anything"),
+                             ("blocks", "blocks", "does not block anything")):
+        lines: list[str] = []
+        walk(tid, key, "  ", {tid}, lines)
+        out += [f"{title}:"] + (lines or [f"  {paint(none, 'dim')}"])
+    waiting = {i for i in _closure(tasks, tid, "blocked_by") if i in tasks and tasks[i]["status"] != "done"}
+    if waiting:
+        out.append(paint(f"waiting on {len(waiting)} unfinished ticket(s): " + ", ".join(sorted(waiting)), "yellow"))
+    return "\n".join(out)
+
+
+def _closure(tasks: dict, tid: str, key: str) -> set[str]:
+    seen: set[str] = set()
+    todo = list(tasks[tid][key])
+    while todo:
+        i = todo.pop()
+        if i not in seen:
+            seen.add(i)
+            todo += tasks[i][key] if i in tasks else []
+    return seen
+
+
+RAW_ACTIONS = ("title", "assign", "tag", "rm", "delete")
+CLEAR_WORDS = ("-", "none", "nobody", "unassign")
+
+
+def cmd_field(engine: Engine, tid: str, action: str, rest: list[str], p: str) -> None:
+    """title TEXT, assign NAME, tag +A -B C, rm [-y]. The words after the action are taken
+    as they are (so `tag -old` and titles starting with a dash work, no quoting needed)."""
+    usage = {"title": f"{p} REPO ID title NEW TITLE", "assign": f"{p} REPO ID assign NAME|me|-",
+             "tag": f"{p} REPO ID tag +TAG -TAG TAG ...", "rm": f"{p} REPO ID rm [-y]",
+             "delete": f"{p} REPO ID rm [-y]"}[action]
+    if rest in (["-h"], ["--help"]):
+        print("usage: " + usage)
+        return
+    t = engine.get_task(tid)
+    if action == "title":
+        text = " ".join(rest).strip()
+        if not text:
+            fail(f"title needs the new text\nusage: {usage}")
+        engine.save_task({"id": tid, "title": text})
+        print(f"{tid}: title → {text}")
+    elif action == "assign":
+        name = " ".join(rest).strip()
+        if not name:
+            fail(f"assign needs a name (me = git user, - clears)\nusage: {usage}")
+        if name.lower() == "me":
+            name = run_git(engine.root, "config", "user.name", check=False).stdout.strip() or name
+        name = "" if name.lower() in CLEAR_WORDS else name
+        engine.save_task({"id": tid, "assignee": name})
+        print(f"{tid}: assignee → {name or '-'}")
+    elif action == "tag":
+        tags = list(t["tags"])
+        if not rest:
+            fail(f"tag needs +TAG to add and/or -TAG to remove\nusage: {usage}")
+        for word in rest:
+            for piece in filter(None, word.split(",")):
+                remove = piece.startswith("-") and len(piece) > 1
+                name = normalize_tag(piece[1:] if piece[0] in "+-" and len(piece) > 1 else piece)
+                if not name:
+                    continue
+                if remove:
+                    tags = [x for x in tags if fold(x) != fold(name)]
+                elif not any(fold(x) == fold(name) for x in tags):  # keep the existing spelling
+                    tags.append(name)
+        engine.save_task({"id": tid, "tags": tags})
+        print(f"{tid}: tags → {' '.join('#' + x for x in engine.get_task(tid)['tags']) or '-'}")
+    else:  # rm / delete
+        if any(w not in ("-y", "--yes") for w in rest):
+            fail(f"usage: {usage}")
+        if not rest:
+            if not sys.stdin.isatty():
+                fail(f"refusing to delete {tid} without -y (nothing was asked: not a terminal)")
+            if ask(f"delete {tid} ({t['title']}) and its comments and attachments? [y/N] ").strip().lower() \
+                    not in ("y", "yes"):
+                print("not deleted")
+                return
+        engine.delete_task(tid)
+        print(f"{tid}: deleted (not committed; use save or git)")
+
+
 def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
+    if argv and argv[0] in RAW_ACTIONS:
+        return cmd_field(engine, find_ticket(engine, spec), argv[0], argv[1:], p)
     ap = argparse.ArgumentParser(
         prog=f"{p} REPO ID", formatter_class=argparse.RawDescriptionHelpFormatter,
-        usage=f"{p} REPO ID [edit | comment | status VALUE | start | done | reopen | priority VALUE | "
-              "attach FILES | detach NAMES | open [NAMES] | blocked IDS | block-by IDS | remove blocked IDS | "
+        usage=f"{p} REPO ID [edit | comment | title TEXT | assign NAME | tag +A -B | rm | deps | "
+              "status VALUE | start | done | reopen | priority VALUE | attach FILES | detach NAMES | open [NAMES] | blocked IDS | block-by IDS | remove blocked IDS | "
               "remove block-by IDS] [flags]",
         description="Show a ticket, edit it, comment on it, set its priority, or change its dependencies.",
         epilog="examples:\n"
@@ -652,6 +859,11 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
                f"  • {p} . TKT-101 -c -m 'done'    add a comment from the command line\n"
                f"  • {p} . TKT-101 comment -m 'see logs' -f trace.txt shot.png   comment with files (-f)\n"
                f"  • echo 'looks good' | {p} . TKT-101 comment\n"
+               f"  • {p} . TKT-101 title Fix the login redirect   rename (the rest of the line is the title)\n"
+               f"  • {p} . TKT-101 assign alice | me | -        set the assignee (me = git user, - clears)\n"
+               f"  • {p} . TKT-101 tag +ui +api -old            add and remove tags\n"
+               f"  • {p} . TKT-101 rm [-y]                      delete the ticket (asks first on a terminal)\n"
+               f"  • {p} . TKT-104 deps                         the blocker tree, and what it blocks, transitively\n"
                f"  • {p} . TKT-101 status doing    todo | doing | done | blocked (-s done also works)\n"
                f"  • {p} . TKT-101 done            shortcuts: start (doing), done, reopen (todo)\n"
                f"  • {p} . TKT-101 priority high   set the priority (high | medium | low; -p h also works)\n"
@@ -707,6 +919,8 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
                 ap.error("status needs one value: todo, doing, done or blocked"
                          if head == "status" else f"{head} takes no arguments")
             ops.append(("status", value))
+        elif head == "deps" and not ids:
+            ops.append(("deps",))
         elif head == "open":
             ops.append(("open", ids))
         elif head in ("attach", "detach"):
@@ -756,6 +970,8 @@ def cmd_ticket(engine: Engine, spec: str, argv: list[str], p: str) -> None:
         cmd_priority(engine, tid, ops[0][1], ap)
     elif ops[0][0] == "status":
         cmd_status(engine, tid, ops[0][1], ap)
+    elif ops[0][0] == "deps":
+        print(dep_tree(engine, tid))
     elif ops[0][0] == "open":
         cmd_open(engine, tid, ops[0][1], a.path)
     elif ops[0][0] == "attach":

@@ -662,6 +662,24 @@ class Engine:
             self.refresh()
         return out
 
+    def last_changed(self) -> dict[str, float]:
+        """Ticket id -> unix time of its newest change (its files, comments included): the last
+        commit that touched it, or the file's mtime while the change is uncommitted."""
+        out: dict[str, float] = {}
+        log = run_git(self.root, "log", "--format=@%ct", "--name-only", "--no-renames", "--",
+                      TASKS_REL, check=False)
+        ts = 0.0
+        for line in log.stdout.splitlines():  # newest commit first, so the first hit wins
+            if line.startswith("@"):
+                ts = float(line[1:])
+            elif (c := classify_path(line.strip())):
+                out.setdefault(c[1], ts)
+        for rel in self.dirty_files():
+            c = classify_path(rel)
+            if c and (self.root / rel).exists():
+                out[c[1]] = max(out.get(c[1], 0.0), (self.root / rel).stat().st_mtime)
+        return out
+
     def task_dir(self, task_id: str) -> Path:
         return self.tasks_dir / valid_id(task_id)
 

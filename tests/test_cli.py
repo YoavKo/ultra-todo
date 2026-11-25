@@ -486,3 +486,129 @@ def test_status_filter_accepts_the_aliases(proj, capsys):
     proj("board", "--status", "done")
     with pytest.raises(SystemExit):
         proj("ls", "--status", "later")
+
+
+# ---- fields, deps tree, filters, sorting, export ------------------------------------------
+def test_title_assign_tag(proj, capsys):
+    proj("TKT-102", "title", "--Fix", "the", "thing")  # the words are taken as they are
+    assert "title → --Fix the thing" in out(capsys)
+    assert tasks(proj)["TKT-102"]["title"] == "--Fix the thing"
+    with pytest.raises(SystemExit, match="title needs"):
+        proj("TKT-102", "title")
+    proj("TKT-102", "assign", "carol")
+    assert tasks(proj)["TKT-102"]["assignee"] == "carol"
+    proj("TKT-102", "assign", "me")
+    assert tasks(proj)["TKT-102"]["assignee"] == "Tester"  # git user.name of the fixture repo
+    proj("TKT-102", "assign", "-")
+    assert tasks(proj)["TKT-102"]["assignee"] == ""
+    with pytest.raises(SystemExit, match="assign needs"):
+        proj("TKT-102", "assign")
+    out(capsys)
+    proj("TKT-102", "tag", "+api", "-ui", "Extra,more")  # TKT-102 starts with #ui
+    assert "tags → #api #Extra #more" in out(capsys)  # listed in index (alphabetical) order
+    proj("TKT-102", "tag", "-extra", "+API")  # case-insensitive; the old spelling stays
+    assert sorted(tasks(proj)["TKT-102"]["tags"]) == ["api", "more"]
+    with pytest.raises(SystemExit, match="tag needs"):
+        proj("TKT-102", "tag")
+    proj("TKT-102", "title", "-h")
+    assert "usage:" in out(capsys)
+
+
+def test_rm_ticket(proj, capsys, monkeypatch, tmp_path):
+    with pytest.raises(SystemExit, match="refusing to delete TKT-103 without -y"):
+        proj("TKT-103", "rm")  # not a terminal
+    monkeypatch.setattr("sys.stdin", type("TTY", (), {"isatty": lambda self: True})())
+    monkeypatch.setattr(cli, "ask", lambda prompt: "n")
+    proj("TKT-103", "rm")
+    assert "not deleted" in out(capsys) and "TKT-103" in tasks(proj)
+    monkeypatch.setattr(cli, "ask", lambda prompt: "yes")
+    proj("TKT-103", "delete")
+    assert "deleted" in out(capsys) and "TKT-103" not in tasks(proj)
+    proj("TKT-102", "rm", "-y")
+    assert "TKT-102" not in tasks(proj) and "TKT-101" in tasks(proj)
+    assert tasks(proj)["TKT-101"]["blocks"] == []  # links to the deleted ticket are gone
+    with pytest.raises(SystemExit, match="usage"):
+        proj("TKT-101", "rm", "--now")
+
+
+def test_deps_tree(proj, capsys):
+    proj("TKT-101", "block-by", "TKT-103")
+    proj("TKT-102", "block-by", "TKT-103")  # diamond: 103 blocks 101 and 102, 101 blocks 102
+    out(capsys)
+    proj("TKT-102", "deps")
+    text = out(capsys)
+    assert text.splitlines()[0].startswith("TKT-102  Settings")
+    assert "blocked by:" in text and "└─ TKT-101  Login bug" in text or "├─ TKT-101  Login bug" in text
+    assert text.count("TKT-103") == 2 and "(shown above)" in text   # reached twice, expanded once
+    assert "does not block anything" in text and "waiting on 1 unfinished ticket(s): TKT-101" in text  # 103 is done
+    proj("TKT-103", "deps")
+    t3 = out(capsys)
+    assert "not blocked by anything" in t3 and "TKT-102" in t3 and "waiting on" not in t3
+    with pytest.raises(SystemExit):
+        proj("TKT-103", "deps", "x")  # deps takes no arguments
+
+
+def test_ls_blocked_sort_and_since(proj, capsys):
+    proj("ls", "--blocked", "--ids")
+    assert out(capsys).split() == ["TKT-102"]          # waits on the unfinished TKT-101
+    proj("TKT-101", "done")
+    out(capsys)
+    proj("ls", "--blocked", "--ids")
+    assert out(capsys).split() == []
+    proj("TKT-103", "-s", "blocked")
+    out(capsys)
+    proj("ls", "--blocked", "--ids")
+    assert out(capsys).split() == ["TKT-103"]          # status blocked counts too
+    proj("ls", "--sort", "id", "--ids")
+    assert out(capsys).split() == ["TKT-101", "TKT-102", "TKT-103"]
+    proj("ls", "-r", "--sort", "id", "--ids")
+    assert out(capsys).split() == ["TKT-103", "TKT-102", "TKT-101"]
+    proj("ls", "--sort", "status", "--ids")
+    assert out(capsys).split() == ["TKT-102", "TKT-101", "TKT-103"]  # todo, done, blocked
+    proj("ls", "--sort", "title", "--ids")
+    assert out(capsys).split() == ["TKT-103", "TKT-101", "TKT-102"]  # Docs, Login bug, Settings
+    proj("TKT-102", "-c", "-m", "hi")
+    out(capsys)
+    proj("ls", "--sort", "comments", "--ids")
+    assert out(capsys).split()[0] == "TKT-102"
+    # --since: git history for committed tickets, file time for uncommitted ones
+    proj("ls", "--since", "1h", "--ids")
+    assert out(capsys).split() == ["TKT-101", "TKT-102", "TKT-103"]  # all committed a moment ago
+    proj("ls", "--since", "2999-01-01", "--ids")
+    assert out(capsys).split() == []
+    old = "2020-01-01T00:00:00"
+    git_env = {"GIT_AUTHOR_DATE": old, "GIT_COMMITTER_DATE": old}
+    write_task(proj.repo, "OLD-1", title="ancient")
+    import os, subprocess
+    subprocess.run(["git", "add", "--", ".todo/tasks/OLD-1"], cwd=proj.repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "old", "--", ".todo/tasks/OLD-1"], cwd=proj.repo,
+                   check=True, env={**os.environ, **git_env})
+    proj("ls", "--since", "1d", "--ids")
+    assert "OLD-1" not in out(capsys).split()
+    proj("ls", "--since", "2019-12-31", "--ids")
+    assert "OLD-1" in out(capsys).split()
+    proj("ls", "--sort", "updated", "--ids")
+    assert out(capsys).split()[-1] == "OLD-1"  # oldest change last
+    with pytest.raises(SystemExit):
+        proj("ls", "--since", "yesterday")
+
+
+def test_export_csv_and_markdown(proj, capsys):
+    import csv, io
+    proj("TKT-101", "title", 'Login, "quoted" | pipe')
+    out(capsys)
+    proj("ls", "--csv")
+    rows = list(csv.reader(io.StringIO(out(capsys))))
+    assert rows[0] == ["id", "title", "status", "priority", "assignee", "tags", "blocked_by", "blocks", "comments"]
+    assert rows[1] == ["TKT-101", 'Login, "quoted" | pipe', "in_progress", "high", "alice", "auth;backend", "", "TKT-102", "0"]
+    proj("ls", "--md")
+    md = out(capsys).splitlines()
+    assert md[0].startswith("| ID | Title |") and md[1].startswith("|---")
+    assert "Login, \"quoted\" \\| pipe" in md[2] and "In progress" in md[2] and "#auth #backend" in md[2]
+    assert md[3].endswith("| TKT-101 |")  # TKT-102's blockers
+    proj("board", "--md")
+    board = out(capsys)
+    assert "## To do (1)" in board and "## In progress (1)" in board and "## Done (1)" in board
+    assert "- **TKT-102** Settings page — ● medium @bob #ui — blocked by TKT-101" in board
+    with pytest.raises(SystemExit):
+        proj("ls", "--csv", "--json")  # one format at a time
